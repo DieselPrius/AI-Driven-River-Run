@@ -1,14 +1,22 @@
 import pygame
 import os
 import random
+import esper
+
 pygame.init()
 
 #GLOBAL CONSTANTS
+#TODO: Configuration file, maybe?
 SCREEN_WIDTH = 900
 SCREEN_HEIGHT = 900
 TILE_WIDTH = 30
 TILE_HEIGHT = 30
 TERRAIN_SCROLL_SPEED = 1
+PLAYER_WIDTH = 30
+PLAYER_HEIGHT = 30
+PLAYER_SPEED = 3
+FPS = 60
+BACKGROUND_COLOR = (55, 55, 255)
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -16,8 +24,185 @@ pygame.display.set_caption("River Run AI")
 
 
 
+
+#Position Component
+class Position:
+    def __init__(self, x=0.0, y=0.0):
+        self.x = x
+        self.y = y
+
+#Velocity Component
+class Velocity:
+    def __init__(self, x=0.0, y=0.0):
+        self.x = x
+        self.y = y
+
+#Player-Specific Component
+class Player:
+    def __init__(self, lives=1, fuel=100, max=100, fuel_rate=0.5, defuel_rate=0.05):
+        self.lives = lives
+        self.fuel = fuel
+        self.max = max
+        self.fuel_rate = fuel_rate
+        self.defuel_rate = defuel_rate
+
+#Render Component
+class Renderable:
+    def __init__(self, sprite):
+        self.sprite = sprite
+        self.width = sprite.get_width()
+        self.height = sprite.get_height()
+
+class RenderSystem(esper.Processor):
+    def __init__(self, window, clear_color):
+        super().__init__()
+        self.window = window
+        self.clear_color = clear_color
+    def process(self):
+        #Render everything . . .
+        self.window.fill(self.clear_color)
+        for ent, (pos, render) in self.world.get_components(Position, Renderable):
+            self.window.blit(render.sprite, (pos.x - render.width / 2, pos.y - render.height / 2))
+        pygame.display.flip()
+
+#Collision Component
+class Collider:
+    def __init__(self, rect):
+        self.rect = rect
+
+class ColliderSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent, (pos, col) in self.world.get_components(Position, Collider):
+            col.rect.center(pos.x, pos.y)
+
+#Fuelstrip Component
+class Fuelstrip:
+    def __init__(self):
+        None
+        #Stateless component, essentially functions as a flag.
+
+#Refueling System
+class RefuelingSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        #Refueling strip's components
+        for ent_1, (ref, col_1) in self.world.get_components(Fuelstrip, Collider):
+            #Player's components
+            for ent_2, (play, fuel, col_2) in self.world.get_components(Player, Fuel, Collider):
+                #AABB Collision
+                if(col_1.rect.contains(col_2.rect)):
+                    #TODO: Refuel
+                    continue
+
+
+#Movement System
+class MovementSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent, (vel, pos) in self.world.get_components(Velocity, Position):
+            pos.x += vel.x
+            pos.y += vel.y
+            vel.x = 0
+            vel.y = 0
+
+class Bullet:
+    None
+
+#Collision System
+class BulletSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent_1, (pos_1, lives, col_1) in self.world.get_components(Player, Collider):
+            for ent_2, (pos_2, col_2) in self.world.get_components(Bullet, Collider):
+                if ent_1 != ent_2:
+                    if col_1.rect.contains(col_2.rect):
+                        #TODO: Handle Collision
+                        continue
+
+
+class Boat:
+    None
+
+class Plane:
+    None
+
 #class that spawns in objects, draws objects, moves enemies, and contains all objects
-class SpawnManager:
+class Spawner:
+    def __init__(self, max_heli, max_jet, max_boat, max_bomb, max_fuel):
+        self.max_heli = max_heli
+        self.max_jet = max_jet
+        self.max_boat = max_boat
+        self.max_bomb = max_bomb
+        self.max_fuel = max_fuel
+        self.heliCount = 0
+        self.jetCount = 0
+        self.boatCount = 0
+        self.bombCount = 0
+        self.fuelCount = 0
+
+class SpawnSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent, spawn in self.world.get_components(Spawner):
+            if spawn.bombCount < spawn.BOMB_CAP: #if bombs have not reached their spawn limit
+                bomb = self.world.create_entity(Bomb)
+                spawn.bombCount += 1
+            if spawn.boatCount < spawn.BOAT_CAP: #if boats have not reached their spawn limit
+                boat = self.world.create_entity(Boat)
+                spawn.boatCount += 1
+            if spawn.fuelCount < spawn.FUEL_CAP:
+                fuelstrip = self.world.create_entity(Fuelstrip)
+                spawn.fuelCount += 1
+
+class Terrain:
+    def __init__(self, scroll_speed = TERRAIN_SCROLL_SPEED, terrain_tile_width = SCREEN_WIDTH):
+        self.tileMatrix = []
+        self.terrain_tile_width = terrain_tile_width
+        self.initialized = False
+
+class TerrainTile:
+
+    def __init__(self, x, y, color, width, is_land):
+        self.rect = pygame.Rect(x, y, width, width)
+        self.color = color
+        self.width = width
+        self.is_land = is_land
+
+class TerrainSystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent, (terrain) in self.world.get_component(Terrain):
+            if not (terrain.initialized):
+                for i in range(0, terrain.terrain_tile_width + 1):
+                    terrain.tileMatrix.append([])
+                self.generate_initial_terrain(terrain)
+
+    def generate_initial_terrain(self, terrain):
+        x = 0
+        y = SCREEN_HEIGHT - TILE_HEIGHT
+        row = 0
+
+        #build terrain from bottom up with one extra row off screen
+        for i in range(terrain.terrain_tile_width**2 + terrain.terrain_tile_width):
+            if x < (3 * TILE_WIDTH) or x > (SCREEN_WIDTH - (4 * TILE_WIDTH)): #3 tiles of land on each side
+                terrain.tileMatrix[row].append(TerrainTile(x, y, (0,random.randint(200,255),0), TILE_WIDTH, True))
+            else:
+                terrain.tileMatrix[row].append(TerrainTile(x, y, (0,0,random.randint(200,255)), TILE_WIDTH, False))
+
+            x += TILE_WIDTH
+            if x == SCREEN_WIDTH:
+                row += 1
+                x = 0
+                y -= TILE_HEIGHT
+
+""" class SpawnManager:
     #object spawn caps
     HELICOPTER_CAP = 5
     JET_CAP = 5
@@ -136,9 +321,6 @@ class SpawnManager:
         return False
 
 
-
-
-
 class Bomb(pygame.sprite.Sprite):
     m_width = 30
     m_height = 30
@@ -180,9 +362,6 @@ class Bomb(pygame.sprite.Sprite):
         return self
 
 
-
-
-
 class Bullet(pygame.sprite.Sprite):
     m_width = 14
     m_height = 14
@@ -207,8 +386,6 @@ class Bullet(pygame.sprite.Sprite):
     #is the bullet hitting something
     def detectCollision(self, enemy):
         return self.rect.colliderect(enemy.rect)
-
-
 
 
 class Boat(pygame.sprite.Sprite):
@@ -250,9 +427,7 @@ class Boat(pygame.sprite.Sprite):
         self.image = pygame.transform.flip(self.image, True, False)
 
 
-
-
-class Fuel(pygame.sprite.Sprite):
+class FuelStrip(pygame.sprite.Sprite):
     m_type = "fuel"
     m_width = 30
     m_height = 60
@@ -277,20 +452,10 @@ class Fuel(pygame.sprite.Sprite):
         return self.rect.colliderect(player.rect)
 
 
-
-
 class Player(pygame.sprite.Sprite):
-    lives = 3
-    fuel = 100
-    MAX_FUEL = 100
-    FUEL_RATE = 0.5
-    DEFUEL_RATE = 0.05
-    playerWidth = 30
-    playerHeight = 30
-    speed = 3
     img = pygame.image.load(os.path.relpath("Plane1.png"))
-    startPosX = (SCREEN_WIDTH * 0.5) - (playerWidth * 0.5) + 10
-    startPosY = SCREEN_HEIGHT - playerHeight
+    startPosX = (SCREEN_WIDTH * 0.5) - (PLAYER_WIDTH * 0.5) + 10
+    startPosY = SCREEN_HEIGHT - PLAYER_HEIGHT
     color = (255,0,0)
     hudFont = pygame.font.SysFont("Times New Roman", 30)
 
@@ -340,27 +505,6 @@ class Player(pygame.sprite.Sprite):
         if (self.rect.y + self.speed) <= (SCREEN_HEIGHT - self.playerHeight): #keep player on screen
             self.rect.y += self.speed
 
-
-
-
-
-class TerrainTile(pygame.sprite.Sprite):
-
-    def __init__(self, x, y, color, width, isLand):
-        pygame.sprite.Sprite.__init__(self)
-        self.rect = pygame.Rect(x, y, width, width)
-        self.color = color
-        self.width = width
-        self.isLand = isLand #true if terrain tile is land
-
-    def draw(self):
-        pygame.draw.rect(win, self.color, (self.rect.x, self.rect.y, self.rect.width, self.rect.width))
-
-    def setY(self, y):
-        self.rect.y = y
-
-    def getY(self):
-        return self.rect.y
 
 
 
@@ -453,7 +597,6 @@ class TerrainManager:
         return collisionDetected
 
 
-
 #put all your draw calls here
 def DrawEverything():
     terrain.draw()
@@ -461,18 +604,34 @@ def DrawEverything():
     spawnManager.drawObjects()
     for bullet in bullets:
         bullet.draw()
-    pygame.display.update()
+    pygame.display.update() """
     
 
+clock = pygame.time.Clock()
+world = esper.World()
+player = world.create_entity(
+    Position(((SCREEN_WIDTH * 0.5) - (PLAYER_WIDTH * 0.5) + 10), (SCREEN_HEIGHT - PLAYER_HEIGHT)),
+    Player(3, 100, 100, 0.5, 0.05),
+    Velocity(0,0),
+    Renderable(pygame.image.load("plane2.png"))
+)
 
-  
-player = Player()
-terrain = TerrainManager()
-spawnManager = SpawnManager()
+terrain = world.create_entity(
+    Terrain()
+)
+
+render_system = RenderSystem(win, BACKGROUND_COLOR)
+collider_system = ColliderSystem()
+movement_system = MovementSystem()
+terrain_system = TerrainSystem()
+
+world.add_processor(render_system)
+world.add_processor(collider_system, 1)
+world.add_processor(movement_system, 2)
+world.add_processor(terrain_system, 3)
 run = True
-bullets = [] #a list for all bullets on screen
 
-#the main game loop
+#Main Game Loop
 while run:
     
 
@@ -482,61 +641,68 @@ while run:
             run = False 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                bullets.append(player.shoot()) 
+                world.create_entity(
+                    Bullet(),
+                    Position(
+                        world.component_for_entity(player, Position)
+                    )
+                )
     keys = pygame.key.get_pressed()
     if keys[pygame.K_LEFT]:
-        player.moveLeft()
+        world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
     if keys[pygame.K_RIGHT]:
-        player.moveRight()
+        world.component_for_entity(player, Velocity).x = PLAYER_SPEED
     if keys[pygame.K_UP]:
-        player.moveForward()
+        world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
     if keys[pygame.K_DOWN]:
-        player.moveBack()
+        world.component_for_entity(player, Velocity).y = PLAYER_SPEED
 
+    world.process()
+    clock.tick(FPS)
     #==========================================================================================================
 
 
-    #================================= SPAWN OBJECTS =========================================================
-    spawnManager.spawnObjects(terrain, spawnManager)
-    #=========================================================================================================
+    # #================================= SPAWN OBJECTS =========================================================
+    # spawnManager.spawnObjects(terrain, spawnManager)
+    # #=========================================================================================================
 
 
-    #================================== TELL EVERYTHING THAT NEEDS TO MOVE TO MOVE HERE =======================
-    terrain.scroll()
-    spawnManager.scrollObjects()
-    for bullet in bullets:
-        bullet.move()
-    spawnManager.moveObjects()
+    # #================================== TELL EVERYTHING THAT NEEDS TO MOVE TO MOVE HERE =======================
+    # terrain.scroll()
+    # spawnManager.scrollObjects()
+    # for bullet in bullets:
+    #     bullet.move()
+    # spawnManager.moveObjects()
 
-    #==========================================================================================================
-
-
-    #================================== DESPAWN OFF SCREEN ENTITIES ===========================================
-    for bullet in bullets:
-        if bullet.offScreen():
-            bullets.remove(bullet)
-    spawnManager.despawnOffScreenObjects()
-
-    #==========================================================================================================
+    # #==========================================================================================================
 
 
-    #================================== DETECT COLLISIONS =====================================================
-    if terrain.checkForLandCollisions(player):  #if the player hits land
-        player.kill()
-    objtype = spawnManager.detectCollision(player) #returns object.m_type the player collided with
-    if objtype == "fuel": #Player collided with fuel strip
-        player.refuel()
-    elif objtype != False: #Everything else other than the fuel strip currently kills player
-        player.kill()
+    # #================================== DESPAWN OFF SCREEN ENTITIES ===========================================
+    # for bullet in bullets:
+    #     if bullet.offScreen():
+    #         bullets.remove(bullet)
+    # spawnManager.despawnOffScreenObjects()
 
-    spawnManager.detectEnemyBulletCollision(bullets)
+    # #==========================================================================================================
+
+
+    # #================================== DETECT COLLISIONS =====================================================
+    # if terrain.checkForLandCollisions(player):  #if the player hits land
+    #     player.kill()
+    # objtype = spawnManager.detectCollision(player) #returns object.m_type the player collided with
+    # if objtype == "fuel": #Player collided with fuel strip
+    #     player.refuel()
+    # elif objtype != False: #Everything else other than the fuel strip currently kills player
+    #     player.kill()
+
+    # spawnManager.detectEnemyBulletCollision(bullets)
     
-    #==========================================================================================================
+    # #==========================================================================================================
 
-    #================================= DEFUEL PLANE ===========================================================
-    player.defuel()
+    # #================================= DEFUEL PLANE ===========================================================
+    # player.defuel()
 
-    DrawEverything() #redraws everything to the screen
+    #DrawEverything() #redraws everything to the screen
 
 
 pygame.quit()
