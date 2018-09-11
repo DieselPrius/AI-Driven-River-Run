@@ -16,106 +16,123 @@ pygame.display.set_caption("River Run AI")
 
 
 
-#class that spawns in enemies, draws enemies, moves enemies, and contains all enemies
-class EnemyManager:
-    #enemy spawn caps
+#class that spawns in objects, draws objects, moves enemies, and contains all objects
+class SpawnManager:
+    #object spawn caps
     HELICOPTER_CAP = 5
     JET_CAP = 5
     BOAT_CAP = 5
     BOMB_CAP = 5
+    FUEL_CAP = 1
     
-    #enemy spawn probabilities, will be used later
+    #object spawn probabilities, will be used later
     HELICOPTER_PROB = 0
     JET_PROB = 0
     BOAT_PROB = 0
     BOMB_PROB = 100
+    FUEL_PROB = 0
     
-    #current count of enemies
+    #current count of objects
     heliCount = 0
     jetCount = 0
     boatCount = 0
     bombCount = 0
+    fuelCount = 0
     
-    #list of enemies spawned in enemies
-    enemies = []
+    #list of enemies spawned in objects
+    objects = []
 
     #desc: function to update enemy counts after an enemy is despawned
     #pre:
     #post: one of the enemy counts is changed
-    def decreaseEnemyCount(self, enemyType):
-        if enemyType == "bomb":
+    def decreaseObjectCount(self, objectType):
+        if objectType == "bomb":
             self.bombCount -= 1
-        elif enemyType == "helicopter":
+        elif objectType == "helicopter":
             self.heliCount -= 1
-        elif enemyType == "jet":
+        elif objectType == "jet":
             self.jetCount -= 1
-        elif enemyType == "boat":
+        elif objectType == "boat":
             self.boatCount -= 1
+        elif objectType == "fuel":
+            self.fuelCount -= 1
 
-
-    #desc: decides where, when, how many, and how often enemies will be spawn onto the terrain
-    #pre: terrain should be a TerrainManager object, enemyManager should be an EnemyManager object
-    #post: A new random enemy is spawned in a random location, enemy counts are updated, enemy is appened to self.enemies
-    def spawnEnemies(self, terrain, enemyManager):
+    #desc: decides where, when, how many, and how often objects will be spawn onto the terrain
+    #pre: terrain should be a TerrainManager object, spawnManager should be an SpawnManager object
+    #post: A new random object is spawned in a random location, object counts are updated, object is appened to self.objects
+    def spawnObjects(self, terrain, spawnManager):
         if self.bombCount < self.BOMB_CAP: #if bombs have not reached their spawn limit
             bomb = Bomb()
-            self.enemies.append(bomb.spawn(terrain, enemyManager)) 
+            self.objects.append(bomb.spawn(terrain, spawnManager))
             self.bombCount += 1
+        if self.boatCount < self.BOAT_CAP: #if boats have not reached their spawn limit
+            boat = Boat()
+            self.objects.append(boat.spawn(terrain, spawnManager))
+            self.boatCount += 1
+        if self.fuelCount < self.FUEL_CAP:
+            fuelstrip = Fuel()
+            self.objects.append(fuelstrip.spawn(terrain, spawnManager))
+            self.fuelCount += 1
 
-    #desc: checks to see if an enemy has been hit by a player bullet 
+    #desc: checks to see if an object has been hit by a player bullet
     #pre: bullets should be an array of Bullets
-    #post: if an enemy is being hit by a bullet it is removed from self.enemies via self.despawnEnemy
+    #post: if an enemy is being hit by a bullet it is removed from self.objects via self.despawnObjects
     def detectEnemyBulletCollision(self, bullets):
         for bullet in bullets:
-            for e in self.enemies:
-                if bullet.detectCollision(e): #if bullet is colliding with enemy
-                    self.despawnEnemy(e)
+            for o in self.objects:
+                if bullet.detectCollision(o): #if bullet is colliding with object
+                    self.despawnObject(o)
 
     #desc: scrolls all enemies at the same pase as the terrain is scrolling 
     #pre: all enemies must have a scroll function
     #post: enemies are scrolled 
-    def scrollEnemies(self):
-        for e in self.enemies:
-            e.scroll()
+    def scrollObjects(self):
+        for o in self.objects:
+            o.scroll()
 
-    #desc: draws all enemies in self.enemies 
+    #desc: draws all objects in self.objects
     #pre:
     #post: see desc
-    def drawEnemies(self):
-        for enemy in self.enemies:
-            enemy.draw()
+    def drawObjects(self):
+        for object in self.objects:
+            object.draw()
 
-    #desc: moves all enemies 
-    #pre: all enemies must have a move() function
+    #desc: moves all objects
+    #pre:
     #post: see desc
-    def moveEnemies(self):
-        for enemy in self.enemies:
-            enemy.move()
+    def moveObjects(self):
+        for object in self.objects:
+            move = getattr(object, "move", None) #checks if move method exists
+            if move != None and callable(move): #if move is a method and exists
+                if object.m_type == "boat":
+                    object.move(terrain) #boat moves based on terrain
+                else:
+                    object.move()
 
-    #desc: removes an enemy from self.enemies
-    #pre: enemy must have member m_type
-    #post: enemy is removed from self.enemies
-    def despawnEnemy(self, enemy):
-        for e in self.enemies:
-            if e == enemy:
-                self.decreaseEnemyCount(e.m_type)
-                self.enemies.remove(e)
+    #desc: removes an object from self.objects
+    #pre: object must have member m_type
+    #post: object is removed from self.objects
+    def despawnObject(self, object):
+        for o in self.objects:
+            if o == object:
+                self.decreaseObjectCount(o.m_type)
+                self.objects.remove(o)
 
     #desc: see name of function 
     #pre:
     #post: see name of function
-    def despawnOffScreenEnemies(self):
-        for e in self.enemies:
-            if e.rect.top >= SCREEN_HEIGHT:
-                self.despawnEnemy(e)
+    def despawnOffScreenObjects(self):
+        for o in self.objects:
+            if o.rect.top >= SCREEN_HEIGHT:
+                self.despawnObject(o)
 
-    #desc: checks to see if another sprite is colliding with an enemy 
+    #desc: checks to see if another sprite is colliding with an object
     #pre: other must be an object with a rect property
-    #post: returns true if an enemy is being collided with
+    #post: returns object type if an object is being collided with
     def detectCollision(self, other):
-        for e in self.enemies:
-            if e.detectCollision(other):
-                return True
+        for o in self.objects:
+            if o.detectCollision(other):
+                return o.m_type
         return False
 
 
@@ -194,10 +211,80 @@ class Bullet(pygame.sprite.Sprite):
 
 
 
+class Boat(pygame.sprite.Sprite):
+    m_type = "boat"
+    m_width = 50
+    m_height = 30
+    m_movement = 1 #movement modifier: boat moves right if positive, left if negative
+
+    #constructor
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        self.rect = pygame.Rect(0, 0, self.m_width, self.m_height)
+        self.image = pygame.image.load("Boat.png")
+
+    #moves the boat back and forth
+    def move(self, terrain):
+        if(terrain.checkForLandCollisions(self)):
+            self.m_movement = self.m_movement * -1 #change movement direction
+            self.turn()
+        self.rect.x += self.m_movement
+
+    def scroll(self):
+        self.rect.y += TERRAIN_SCROLL_SPEED
+
+    def spawn(self, terrain, enemyManager):
+        while terrain.checkForLandCollisions(self) or enemyManager.detectCollision(self):
+            self.rect.x = random.randint(0, SCREEN_WIDTH - self.rect.width)
+            self.rect.y = random.randint(0, SCREEN_HEIGHT - self.rect.height)
+        return self
+
+    def draw(self):
+        win.blit(self.image, [self.rect.x - 30, self.rect.y - 40])
+
+    def detectCollision(self, enemy):
+        return self.rect.colliderect(enemy.rect)
+
+    #flips the image horizontally
+    def turn(self):
+        self.image = pygame.transform.flip(self.image, True, False)
+
+
+
+
+class Fuel(pygame.sprite.Sprite):
+    m_type = "fuel"
+    m_width = 30
+    m_height = 60
+
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        self.rect = pygame.Rect(0, 0, self.m_width, self.m_height)
+
+    def scroll(self):
+        self.rect.y += TERRAIN_SCROLL_SPEED
+
+    def spawn(self, terrain, spawnManager):
+        while terrain.checkForLandCollisions(self) or spawnManager.detectCollision(self):
+            self.rect.x = random.randint (0, SCREEN_WIDTH - self.rect.width)
+            self.rect.y = random.randint( 0, SCREEN_HEIGHT - self.rect.height)
+        return self
+
+    def draw(self):
+        pygame.draw.rect(win, (250, 0, 255), (self.rect.x, self.rect.y, self.m_width, self.m_height))
+
+    def detectCollision(self, player):
+        return self.rect.colliderect(player.rect)
+
+
+
 
 class Player(pygame.sprite.Sprite):
     lives = 3
     fuel = 100
+    MAX_FUEL = 100
+    FUEL_RATE = 0.5
+    DEFUEL_RATE = 0.05
     playerWidth = 30
     playerHeight = 30
     speed = 3
@@ -205,7 +292,8 @@ class Player(pygame.sprite.Sprite):
     startPosX = (SCREEN_WIDTH * 0.5) - (playerWidth * 0.5) + 10
     startPosY = SCREEN_HEIGHT - playerHeight
     color = (255,0,0)
-    
+    hudFont = pygame.font.SysFont("Times New Roman", 30)
+
     #constructor
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
@@ -214,6 +302,8 @@ class Player(pygame.sprite.Sprite):
     def draw(self):
         #print("Drawing Player at " + str(self.x) + ", " + str(self.y))
         pygame.draw.rect(win, self.color, (self.rect.x, self.rect.y, self.rect.width, self.rect.height))
+        text = self.hudFont.render(str(int(self.fuel)), False, (255, 0, 0))
+        win.blit(text, (0, 0))
         #win.blit(self.img, (self.rect.x, self.rect.y))
 
     def kill(self):
@@ -221,6 +311,18 @@ class Player(pygame.sprite.Sprite):
 
     def shoot(self):
         return Bullet(self)
+
+    def refuel(self):
+        if self.fuel + self.FUEL_RATE <= self.MAX_FUEL:
+            self.fuel += self.FUEL_RATE #refuel player at fuel_rate
+        else:
+            self.fuel += self.MAX_FUEL - self.fuel #top off player
+
+    def defuel(self):
+        if self.fuel - self.DEFUEL_RATE > 0:
+            self.fuel -= self.DEFUEL_RATE #deduct the defuel rate
+        else:
+            player.kill() #Kill player since plane is out of fuel
 
     def moveLeft(self):
         if (self.rect.x - self.speed) >= 0: #keep player from going off screen
@@ -356,7 +458,7 @@ class TerrainManager:
 def DrawEverything():
     terrain.draw()
     player.draw()
-    enemyManager.drawEnemies()
+    spawnManager.drawObjects()
     for bullet in bullets:
         bullet.draw()
     pygame.display.update()
@@ -366,7 +468,7 @@ def DrawEverything():
   
 player = Player()
 terrain = TerrainManager()
-enemyManager = EnemyManager()
+spawnManager = SpawnManager()
 run = True
 bullets = [] #a list for all bullets on screen
 
@@ -394,17 +496,17 @@ while run:
     #==========================================================================================================
 
 
-    #================================= SPAWN ENEMIES =========================================================
-    enemyManager.spawnEnemies(terrain, enemyManager)
+    #================================= SPAWN OBJECTS =========================================================
+    spawnManager.spawnObjects(terrain, spawnManager)
     #=========================================================================================================
 
 
     #================================== TELL EVERYTHING THAT NEEDS TO MOVE TO MOVE HERE =======================
     terrain.scroll()
-    enemyManager.scrollEnemies()
+    spawnManager.scrollObjects()
     for bullet in bullets:
         bullet.move()
-    enemyManager.moveEnemies()
+    spawnManager.moveObjects()
 
     #==========================================================================================================
 
@@ -413,7 +515,7 @@ while run:
     for bullet in bullets:
         if bullet.offScreen():
             bullets.remove(bullet)
-    enemyManager.despawnOffScreenEnemies()
+    spawnManager.despawnOffScreenObjects()
 
     #==========================================================================================================
 
@@ -421,12 +523,18 @@ while run:
     #================================== DETECT COLLISIONS =====================================================
     if terrain.checkForLandCollisions(player):  #if the player hits land
         player.kill()
-    if enemyManager.detectCollision(player):
+    objtype = spawnManager.detectCollision(player) #returns object.m_type the player collided with
+    if objtype == "fuel": #Player collided with fuel strip
+        player.refuel()
+    elif objtype != False: #Everything else other than the fuel strip currently kills player
         player.kill()
-    enemyManager.detectEnemyBulletCollision(bullets)
+
+    spawnManager.detectEnemyBulletCollision(bullets)
     
     #==========================================================================================================
 
+    #================================= DEFUEL PLANE ===========================================================
+    player.defuel()
 
     DrawEverything() #redraws everything to the screen
 
