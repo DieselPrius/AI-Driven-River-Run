@@ -52,6 +52,7 @@ class SpawnManager:
             self.heliCount -= 1
         elif objectType == "jet":
             self.jetCount -= 1
+            print(self.jetCount)
         elif objectType == "boat":
             self.boatCount -= 1
         elif objectType == "fuel":
@@ -69,6 +70,10 @@ class SpawnManager:
             boat = Boat()
             self.objects.append(boat.spawn(terrain, spawnManager))
             self.boatCount += 1
+        if self.jetCount < self.JET_CAP: #if jets have not reached their spawn limit
+            jet = Jet()
+            self.objects.append(jet.spawn(terrain, spawnManager))
+            self.jetCount += 1
         if self.fuelCount < self.FUEL_CAP:
             fuelstrip = Fuel()
             self.objects.append(fuelstrip.spawn(terrain, spawnManager))
@@ -106,6 +111,8 @@ class SpawnManager:
             if move != None and callable(move): #if move is a method and exists
                 if object.m_type == "boat":
                     object.move(terrain) #boat moves based on terrain
+                elif object.m_type == "jet":
+                    object.move(terrain) #jet moves based on terrain
                 else:
                     object.move()
 
@@ -118,12 +125,12 @@ class SpawnManager:
                 self.decreaseObjectCount(o.m_type)
                 self.objects.remove(o)
 
-    #desc: see name of function 
+    #desc: Despawns objects when they move off the screen vertically or horizontally. 
     #pre:
     #post: see name of function
     def despawnOffScreenObjects(self):
         for o in self.objects:
-            if o.rect.top >= SCREEN_HEIGHT:
+            if o.rect.top >= SCREEN_HEIGHT or o.rect.right >= SCREEN_WIDTH or o.rect.left < -30:
                 self.despawnObject(o)
 
     #desc: checks to see if another sprite is colliding with an object
@@ -275,6 +282,44 @@ class Fuel(pygame.sprite.Sprite):
 
     def detectCollision(self, player):
         return self.rect.colliderect(player.rect)
+
+
+
+
+class Jet(pygame.sprite.Sprite):
+    m_type = "jet"
+    m_width = 30
+    m_height = 30
+    image = pygame.image.load(os.path.relpath("Jet.png"))
+
+    #constructor
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        self.speed = 2
+        self.rect = pygame.Rect(0, 0, self.m_width, self.m_height)
+
+    #moves the jet down towards the bottom of the screen
+    def move(self, terrain):
+        self.rect.y += self.speed
+
+    def scroll(self):
+        self.rect.y += TERRAIN_SCROLL_SPEED
+
+    def spawn(self, terrain, enemyManager):
+        while enemyManager.detectCollision(self):
+            # Jets don't care about land!
+            self.rect.x = random.randint(0, SCREEN_WIDTH - self.rect.width)
+            self.rect.y = random.randint(0, SCREEN_HEIGHT - self.rect.height)
+        return self
+
+    def draw(self):
+        win.blit(self.image, [self.rect.x - 30, self.rect.y - 30])
+        
+    def detectCollision(self, enemy):
+        return self.rect.colliderect(enemy.rect)
+
+    def offScreen(self):
+        return (self.rect.bottom > SCREEN_HEIGHT)
 
 
 
