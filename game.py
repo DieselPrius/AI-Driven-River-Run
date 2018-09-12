@@ -52,7 +52,6 @@ class SpawnManager:
             self.heliCount -= 1
         elif objectType == "jet":
             self.jetCount -= 1
-            print(self.jetCount)
         elif objectType == "boat":
             self.boatCount -= 1
         elif objectType == "fuel":
