@@ -305,8 +305,7 @@ class Jet(pygame.sprite.Sprite):
         self.rect.y += TERRAIN_SCROLL_SPEED
 
     def spawn(self, terrain, enemyManager):
-        while enemyManager.detectCollision(self):
-            # Jets don't care about land!
+        while terrain.checkForLandCollisions(self) or enemyManager.detectCollision(self):
             self.rect.x = random.randint(0, SCREEN_WIDTH - self.rect.width)
             self.rect.y = random.randint(0, SCREEN_HEIGHT - self.rect.height)
         return self
