@@ -5,10 +5,11 @@ pygame.init()
 
 #GLOBAL CONSTANTS
 SCREEN_WIDTH = 900
-SCREEN_HEIGHT = 900
+SCREEN_HEIGHT = SCREEN_WIDTH  
 TILE_WIDTH = 30
-TILE_HEIGHT = 30
-TERRAIN_SCROLL_SPEED = 1
+TILE_HEIGHT = TILE_WIDTH
+TERRAIN_SCROLL_SPEED = 3
+MAX_FRAME_RATE = 60
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -287,7 +288,7 @@ class Player(pygame.sprite.Sprite):
     DEFUEL_RATE = 0.05
     playerWidth = 30
     playerHeight = 30
-    speed = 3
+    speed = TILE_WIDTH
     img = pygame.image.load(os.path.relpath("Plane1.png"))
     startPosX = (SCREEN_WIDTH * 0.5) - (playerWidth * 0.5) + 10
     startPosY = SCREEN_HEIGHT - playerHeight
@@ -369,31 +370,59 @@ class TerrainTile(pygame.sprite.Sprite):
 class TerrainManager:
     tileMatrix = []
     scrollSpeed = TERRAIN_SCROLL_SPEED
-    terrainTILE_WIDTH = SCREEN_WIDTH // TILE_WIDTH #width of terrain in tiles
+    terrainTileWidth = SCREEN_WIDTH // TILE_WIDTH #width of terrain in tiles
+    terrainTileHeight = terrainTileWidth #height of the terrain in tiles
+    CHUNK_HEIGHT = terrainTileHeight
+    carveCenterTile = (SCREEN_WIDTH // TILE_WIDTH) //2 #the column number where the center of the carver will start
+
+    #noise map generation parameters ====================
+    numOfGenerationSteps = 6 #number of times to go through kill/revive decisions
+    numOfAliveNeighborsRequiredForMurder = 4 #kill a living cell if it has fewer neighbors than this
+    numOfAliveNeighborsNeededForRebirth = 3 #revive a dead cell if it has more living neighbors than this
+    chanceToStartAlive = 0.35 #intial chance for a cell to start out as living
+    #=====================================================
 
     def __init__(self):
-        for i in range(0,self.terrainTILE_WIDTH + 1):
+        for i in range(0,self.terrainTileWidth + 1):
             self.tileMatrix.append([])
         self.generateIntialTerrain()
 
 
+    #desc: guarantees that the player will never be land locked by carving a random path into the terrain, carves terrain row by row
+    #pre: matrixRow is a terrain matrix row
+    def carve(self, matrixRow):
+        for i in range(-3,4): #carve a six wide path
+            currentX = self.tileMatrix[matrixRow][self.carveCenterTile + i].rect.x #current x pos of the carvecenter neighbor
+            currentY = self.tileMatrix[matrixRow][self.carveCenterTile + i].rect.y #current y pos of the carvecenter neighbor
+            self.tileMatrix[matrixRow][self.carveCenterTile + i] = TerrainTile(currentX, currentY, (0,0,200), TILE_WIDTH, False)
+
+        self.carveCenterTile += random.randint(-1,1)
+        if(self.carveCenterTile >= (self.terrainTileWidth - 4)):
+            self.carveCenterTile = self.terrainTileWidth - 5
+        elif(self.carveCenterTile <= 4):
+            self.carveCenterTile = 5
+
+
+    #desc: builds a starting terrain tile-by-tile from the top right corner to the bottom right corner of the screen
     def generateIntialTerrain(self):
-        x = 0
-        y = SCREEN_HEIGHT - TILE_HEIGHT
-        row = 0
+        x = 0 #start on left side of screen
+        y = SCREEN_HEIGHT - TILE_HEIGHT #start 1 row above what the camera can currently see
+        row = 0 
 
         #build terrain from bottom up with one extra row off screen
-        for i in range(self.terrainTILE_WIDTH**2 + self.terrainTILE_WIDTH):
+        for i in range(self.terrainTileWidth**2 + self.terrainTileWidth):
             if x < (3 * TILE_WIDTH) or x > (SCREEN_WIDTH - (4 * TILE_WIDTH)): #3 tiles of land on each side
-                self.tileMatrix[row].append(TerrainTile(x, y, (0,random.randint(200,255),0), TILE_WIDTH, True))
-            else:
-                self.tileMatrix[row].append(TerrainTile(x, y, (0,0,random.randint(200,255)), TILE_WIDTH, False))
+                self.tileMatrix[row].append(TerrainTile(x, y, (0,random.randint(200,255),0), TILE_WIDTH, True)) #land
+            else: #all other tiles are water
+                self.tileMatrix[row].append(TerrainTile(x, y, (0,0,random.randint(200,255)), TILE_WIDTH, False)) #water
+            
+            x += TILE_WIDTH #x value for terrain cell
+            if x == SCREEN_WIDTH: #if we have just finished building a complete row
+                self.carve(row) #optional
+                row += 1 
+                x = 0 #move x back to the left side of the screen
+                y -= TILE_HEIGHT #y pos for tiles in next row
 
-            x += TILE_WIDTH
-            if x == SCREEN_WIDTH:
-                row += 1
-                x = 0
-                y -= TILE_HEIGHT
 
     #draws all tiles
     def draw(self):
@@ -401,56 +430,139 @@ class TerrainManager:
             for j in range(0,len(self.tileMatrix[i])):
                 self.tileMatrix[i][j].draw()
 
+
     #scrolls the terrain down the screen
     def scroll(self):
-        for i in range(0,len(self.tileMatrix)):
-            for j in range(0,len(self.tileMatrix[i])):
+        print(len(self.tileMatrix))
+        for i in range(0,len(self.tileMatrix)): #for each terrain row
+            for j in range(0,len(self.tileMatrix[i])): #for each tile in the current terrain row
                 self.tileMatrix[i][j].setY(self.tileMatrix[i][j].getY() + self.scrollSpeed) #increase y pos of each tile by scrollSpeed
 
         if self.tileMatrix[-1][0].rect.top > 0: #if the top of the last terrain row enters the screen a new chunk must be generated
-            self.generateChunk()
+            self.generateChunk(self.generateNoiseMap())
 
         if self.tileMatrix[0][0].rect.top >= SCREEN_HEIGHT: #delete terrain rows that are no longer on the screen
             self.tileMatrix.pop(0)
 
 
-    #generates a chunk of terrain
-    def generateChunk(self):
-        for i in range(10):
-            self.generateRow()
+    #desc: generates a chunk of terrain tiles based on a noise map 
+    #pre: noiseMap is boolean matrix
+    #post: a new chunk of terrain tiles are added to the terrain (aka tileMatrix)
+    def generateChunk(self, noiseMap):
 
-    #generates a random terrain row
-    def generateRow(self):
-        tempList = []
-        numOfSideLandBlocks = random.randint(1,3)
-        islandWidth = random.randint(0,3)
+        tempList = [] #temp list to append to tile matrix
 
-        for i in range(0, SCREEN_WIDTH // TILE_WIDTH):
-            if i < numOfSideLandBlocks: #generate left side land mass 
-                tempList.append(TerrainTile(i*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,random.randint(200,255),0), TILE_WIDTH, True))
-            elif (i >= ((SCREEN_WIDTH//TILE_WIDTH) - numOfSideLandBlocks)): #generate right side land mass
-                tempList.append(TerrainTile(i*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,random.randint(200,255),0), TILE_WIDTH, True))
-            elif islandWidth > 0 and i >= ((SCREEN_WIDTH // TILE_WIDTH)//2) - islandWidth and i <= ((SCREEN_WIDTH // TILE_WIDTH)//2) + islandWidth: #generate middle land mass
-                tempList.append(TerrainTile(i*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,random.randint(200,255),0), TILE_WIDTH, True))
-            else: #generate water
-                tempList.append(TerrainTile(i*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,0,random.randint(200,255)), TILE_WIDTH, False))
-            
-        self.tileMatrix.append(tempList)
+        for noiseRow in noiseMap: #for each row in the noise map
+            tempList = [] #clear the temp list
+            for c in range(len(noiseRow)): #for each entry in the current noise map row
+                if noiseRow[c] or c == 0 or c == (len(noiseRow)-1): #if noise map contains true or we are on the left most column of the noise map or the right most column of the noise map
+                    tempList.append(TerrainTile(c*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,200,0), TILE_WIDTH, True)) #add land tile to the list
+                else:
+                    tempList.append(TerrainTile(c*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,0,200), TILE_WIDTH, False)) #add water tile to the list
+            self.tileMatrix.append(tempList) #add the row to the terrain
+            self.carve(len(self.tileMatrix) - 1) #carve out land to guarantee path for player
 
 
-    
+    #desc: generates an news map for the generateChunk function
+    #pre: 
+    #post: returns a martix of bools, generateChunk() will interpret true values as places to place land in the terrain (if tile is not on the outmost edge of the map)
+    def generateNoiseMap(self):
+        noiseMap = [] #intialize noiseMap, will be a matrix of bools
+        for i in range(self.CHUNK_HEIGHT): #add an empty list for each row (more intialization)
+            noiseMap.append([])
+        #fill all values in noise map with false (so that they default as water)
+        for x in noiseMap:
+            for i in range(self.terrainTileWidth): #make every rows column values false so that everything is water by default
+                x.append(False)
+
+        noiseMap = self.initialiseMap(noiseMap)  #randomly make some cells alive
+
+        for i in range(self.numOfGenerationSteps): #higher numbers of generation steps create a smoother terrain
+            noiseMap = self.doSimulationStep(noiseMap) #generate the "cells" aka islands
+
+        return noiseMap
+
+
+    #desc: (look up "Cellular Automata") a function that will interate through each cell of a noise map to determine if a cell 
+    #         needs to live or die based on the number of neighbors it has
+    #pre: noise map must be a matrix of bools, it must have self.CHUNK_HEIGHT number of rows
+    #post: some values of oldNoiseMap will be inverted based on how many alive neighbors they have and will be copied into newNoiseMap which will be returned by this function
+    def doSimulationStep(self, oldNoiseMap):
+        #initialize newNoiseMap to create a new bool matrix with all false values =================
+        newNoiseMap = []
+        for i in range(self.CHUNK_HEIGHT):
+            newNoiseMap.append([])
+        for x in newNoiseMap:
+            for i in range(self.terrainTileWidth): #make every row's column values false
+                x.append(False)
+        #==========================================================================================
+        
+        
+        for x in range(len(oldNoiseMap)): #for each row of oldNoiseMap
+            for y in range(len(oldNoiseMap[0])): #for each column of oldNoiseMap
+                nbs = self.countAliveNeighbors(oldNoiseMap, x, y) #check how many alive neighbors the cell (aka tile) has
+                if(oldNoiseMap[x][y]): #if cell is currently alive
+                    if(nbs < self.numOfAliveNeighborsRequiredForMurder): #kill it if it has too many neighbors
+                        newNoiseMap[x][y] = False
+                    else:
+                        newNoiseMap[x][y] = True
+                else: #if cell is currently dead
+                    if(nbs > self.numOfAliveNeighborsNeededForRebirth): #bring cell back to life if it has a lot of alive neighbors
+                        newNoiseMap[x][y] = True
+                    else:
+                        newNoiseMap[x][y] = False
+
+        return newNoiseMap
+
+
+    #desc: reports how many alive neighbors a cell currently has
+    #pre: map is a noise map (matrix of bools), x is noise map row, y is noise map column
+    #pos: returns the number of alive neighbors cell x,y has. Alive == True
+    def countAliveNeighbors(self,map, x, y): 
+        count = 0 #assume cell located at x,y has no alive neighbors
+        for i in range(-1,2): #for x-1, x, and x+1 rows in map
+            for j in range(-1,2): #for y-1, y, and y+1 columns in map
+                neighbor_x = x+i #row of current neighbor
+                neighbor_y = y+j #column of current neighbor
+
+                if(i == 0 and j == 0): #don't do anything if you are looking at the cell whose neighbors you want to count
+                    dummy = 1
+                elif(neighbor_x < 0 or neighbor_x >= len(map)): #if cell has no above neighbors or below neighbors count those non-existance neighbors as dead
+                    count += 0
+                elif(neighbor_y < 0 or neighbor_y >= len(map[0])): #if cell has no right/left neighbors, count them as living
+                    count += 1
+                elif(map[neighbor_x][neighbor_y]): #if neighbor is alive, increase living neighbor count
+                    count += 1
+
+        return count
+
+
+    #desc: function used to randomly make some cells alive
+    #pre: map is a bool matrix (noiseMap)
+    #post: random cells of the noise map "map" are set equal to true
+    def initialiseMap(self,map):
+        #for each cell in the map:
+        for x in range(self.CHUNK_HEIGHT):
+            for y in range(self.terrainTileWidth):
+                if(random.random() < self.chanceToStartAlive): #randomly make cell alive
+                    map[x][y] = True
+        
+        return map
+
+ 
     #desc: checks to see if another object is colliding with land
     #pre: other must have a rect property
     #post: returns true if "other" sprite is colliding with land
     def checkForLandCollisions(self, other):
         collisionDetected = False
-        for r in range(len(self.tileMatrix)):
-            for c in range(len(self.tileMatrix[r])):
-                if self.tileMatrix[r][c].isLand and self.tileMatrix[r][c].rect.colliderect(other.rect): #for each tile, if tile is land and is colliding with other
+        for r in range(len(self.tileMatrix)): #for each terrain row
+            for c in range(len(self.tileMatrix[r])): #for each terrain column
+                if self.tileMatrix[r][c].isLand and self.tileMatrix[r][c].rect.colliderect(other.rect): #for each tile, if tile is land and is colliding with "other"
                     collisionDetected = True
                     break
         
         return collisionDetected
+
 
 
 
@@ -471,10 +583,13 @@ terrain = TerrainManager()
 spawnManager = SpawnManager()
 run = True
 bullets = [] #a list for all bullets on screen
+clock = pygame.time.Clock()
+
 
 #the main game loop
 while run:
-    
+    clock.tick(MAX_FRAME_RATE)
+
 
     #================================= LISTEN FOR EVENTS ========================================================
     for event in pygame.event.get():
@@ -483,16 +598,14 @@ while run:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 bullets.append(player.shoot()) 
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
-        player.moveLeft()
-    if keys[pygame.K_RIGHT]:
-        player.moveRight()
-    if keys[pygame.K_UP]:
-        player.moveForward()
-    if keys[pygame.K_DOWN]:
-        player.moveBack()
-
+            if event.key == pygame.K_LEFT:
+                player.moveLeft()
+            if event.key == pygame.K_RIGHT:
+                player.moveRight()
+            if event.key == pygame.K_UP:
+                player.moveForward()
+            if event.key == pygame.K_DOWN:
+                player.moveBack()
     #==========================================================================================================
 
 
