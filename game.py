@@ -14,9 +14,11 @@ TILE_HEIGHT = 30
 TERRAIN_SCROLL_SPEED = 1
 PLAYER_WIDTH = 30
 PLAYER_HEIGHT = 30
-PLAYER_SPEED = 3
+PLAYER_SPEED = 1
 FPS = 60
 BACKGROUND_COLOR = (55, 55, 255)
+BOMB_WIDTH = 30
+BOMB_HEIGHT = 30
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -27,13 +29,13 @@ pygame.display.set_caption("River Run AI")
 
 #Position Component
 class Position:
-    def __init__(self, x=0.0, y=0.0):
+    def __init__(self, x=0, y=0):
         self.x = x
         self.y = y
 
 #Velocity Component
 class Velocity:
-    def __init__(self, x=0.0, y=0.0):
+    def __init__(self, x=0, y=0):
         self.x = x
         self.y = y
 
@@ -62,12 +64,12 @@ class RenderSystem(esper.Processor):
         #Render everything . . .
         self.window.fill(self.clear_color)
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
-            self.window.blit(render.sprite, (pos.x - render.width / 2, pos.y - render.height / 2))
+            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
         pygame.display.flip()
 
 #Collision Component
 class Collider:
-    def __init__(self, rect):
+    def __init__(self, rect=(0,0)):
         self.rect = rect
 
 class ColliderSystem(esper.Processor):
@@ -75,7 +77,8 @@ class ColliderSystem(esper.Processor):
         super().__init__()
     def process(self):
         for ent, (pos, col) in self.world.get_components(Position, Collider):
-            col.rect.center(pos.x, pos.y)
+            col.rect.x = pos.x
+            col.rect.y = pos.y
 
 #Fuelstrip Component
 class Fuelstrip:
@@ -91,7 +94,7 @@ class RefuelingSystem(esper.Processor):
         #Refueling strip's components
         for ent_1, (ref, col_1) in self.world.get_components(Fuelstrip, Collider):
             #Player's components
-            for ent_2, (play, fuel, col_2) in self.world.get_components(Player, Fuel, Collider):
+            for ent_2, (play, fuel, col_2) in self.world.get_components(Player, Collider):
                 #AABB Collision
                 if(col_1.rect.contains(col_2.rect)):
                     #TODO: Refuel
@@ -106,8 +109,6 @@ class MovementSystem(esper.Processor):
         for ent, (vel, pos) in self.world.get_components(Velocity, Position):
             pos.x += vel.x
             pos.y += vel.y
-            vel.x = 0
-            vel.y = 0
 
 class Bullet:
     None
@@ -160,7 +161,23 @@ class SpawnSystem(esper.Processor):
                 fuelstrip = self.world.create_entity(Fuelstrip)
                 spawn.fuelCount += 1
 
-class Terrain:
+""" class Bomb:
+    def __init__(self, width = BOMB_WIDTH, height = BOMB_HEIGHT):
+        self.width = width
+        self.height = height
+
+class BombSystem:
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        for ent, (bomb, col_1) in self.world.get_components(Bomb, Collider):
+            for ent, (player, col_2) in self.world.get_components(Player, Collider):
+                if (col_1.rect.contains(col_2.rect)):
+                    print("Collision!") """
+    
+
+
+""" class Terrain:
     def __init__(self, scroll_speed = TERRAIN_SCROLL_SPEED, terrain_tile_width = SCREEN_WIDTH):
         self.tileMatrix = []
         self.terrain_tile_width = terrain_tile_width
@@ -182,9 +199,9 @@ class TerrainSystem(esper.Processor):
             if not (terrain.initialized):
                 for i in range(0, terrain.terrain_tile_width + 1):
                     terrain.tileMatrix.append([])
-                self.generate_initial_terrain(terrain)
+                #self.generate_initial_terrain(terrain) """
 
-    def generate_initial_terrain(self, terrain):
+"""     def generate_initial_terrain(self, terrain):
         x = 0
         y = SCREEN_HEIGHT - TILE_HEIGHT
         row = 0
@@ -200,7 +217,7 @@ class TerrainSystem(esper.Processor):
             if x == SCREEN_WIDTH:
                 row += 1
                 x = 0
-                y -= TILE_HEIGHT
+                y -= TILE_HEIGHT """
 
 """ class SpawnManager:
     #object spawn caps
@@ -613,22 +630,27 @@ player = world.create_entity(
     Position(((SCREEN_WIDTH * 0.5) - (PLAYER_WIDTH * 0.5) + 10), (SCREEN_HEIGHT - PLAYER_HEIGHT)),
     Player(3, 100, 100, 0.5, 0.05),
     Velocity(0,0),
-    Renderable(pygame.image.load("plane2.png"))
+    Renderable(pygame.image.load("./plane2.png")),
+    Collider()
 )
+# world.create_entity(
+"""     Bomb(),
+    Position(500, 500),
+    Renderable(pygame.image.load("./bullet.png")),
+    Collider()
+) """
 
-terrain = world.create_entity(
-    Terrain()
-)
 
 render_system = RenderSystem(win, BACKGROUND_COLOR)
 collider_system = ColliderSystem()
 movement_system = MovementSystem()
-terrain_system = TerrainSystem()
+# bomb_system = BombSystem()
 
 world.add_processor(render_system)
 world.add_processor(collider_system, 1)
 world.add_processor(movement_system, 2)
-world.add_processor(terrain_system, 3)
+# world.add_processor(bomb_system)
+
 run = True
 
 #Main Game Loop
