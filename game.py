@@ -2,26 +2,29 @@ import pygame
 import os
 import random
 import esper
+from enum import Enum
 
 pygame.init()
 
 #GLOBAL CONSTANTS
 #TODO: Configuration file, maybe?
 SCREEN_WIDTH = 900
-SCREEN_HEIGHT = SCREEN_WIDTH  
+SCREEN_HEIGHT = 900 
 TILE_WIDTH = 30
 TILE_HEIGHT = 30
+ROWS = SCREEN_HEIGHT // TILE_HEIGHT
+COLUMNS = SCREEN_WIDTH // TILE_WIDTH
 TERRAIN_SCROLL_SPEED = 1
 PLAYER_WIDTH = 30
 PLAYER_HEIGHT = 30
 PLAYER_SPEED = 1
-FPS = 60
-BACKGROUND_COLOR = (55, 55, 255)
+MAX_FPS = 60
+BACKGROUND_COLOR = (0, 0, 0)
 BOMB_WIDTH = 30
 BOMB_HEIGHT = 30
-TILE_HEIGHT = TILE_WIDTH
-TERRAIN_SCROLL_SPEED = 3
-MAX_FRAME_RATE = 60
+#In frames
+TERRAIN_SCROLL_DELAY = 20
+
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -66,22 +69,45 @@ class RenderSystem(esper.Processor):
     def process(self):
         #Render everything . . .
         self.window.fill(self.clear_color)
+        #Render the Terrain . . .
+        for ent, terrain in self.world.get_component(Terrain):
+            #By Row
+            for i in range(terrain.scroll_pos, terrain.scroll_pos + ROWS):
+                #By Column
+                for j in range(0, terrain.terrain_width):
+                    if(terrain.tile_matrix[i % terrain.terrain_height][j].tile_type == Tiles.LAND):
+                        #Land is GREEN
+                        pygame.draw.rect(self.window,
+                                        (0,255,0),
+                                        (j * TILE_WIDTH,
+                                        (i % terrain.terrain_height) * TILE_HEIGHT,
+                                        TILE_WIDTH,
+                                        TILE_HEIGHT))
+                    elif(terrain.tile_matrix[i % terrain.terrain_height][j].tile_type == Tiles.WATER):
+                        #Water is WET, err I mean BLUE
+                        pygame.draw.rect(self.window,
+                                        (0,0,255),
+                                        (j * TILE_WIDTH,
+                                        (i % terrain.terrain_height) * TILE_HEIGHT,
+                                        TILE_WIDTH,
+                                        TILE_HEIGHT))
+        #Render the Entities . . .
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
         pygame.display.flip()
 
 #Collision Component
 class Collider:
-    def __init__(self, rect=(0,0)):
-        self.rect = rect
+    def __init__(self):
+        pass
 
 class ColliderSystem(esper.Processor):
     def __init__(self):
         super().__init__()
     def process(self):
         for ent, (pos, col) in self.world.get_components(Position, Collider):
-            col.rect.x = pos.x
-            col.rect.y = pos.y
+            #Collision
+            pass
 
 #Fuelstrip Component
 class Fuelstrip:
@@ -112,6 +138,8 @@ class MovementSystem(esper.Processor):
         for ent, (vel, pos) in self.world.get_components(Velocity, Position):
             pos.x += vel.x
             pos.y += vel.y
+            vel.x = 0
+            vel.y = 0
 
 class Bullet:
     None
@@ -124,9 +152,8 @@ class BulletSystem(esper.Processor):
         for ent_1, (pos_1, lives, col_1) in self.world.get_components(Player, Collider):
             for ent_2, (pos_2, col_2) in self.world.get_components(Bullet, Collider):
                 if ent_1 != ent_2:
-                    if col_1.rect.contains(col_2.rect):
-                        #TODO: Handle Collision
-                        continue
+                    #TODO: Bullet Collision
+                    pass
 
 
 class Boat:
@@ -134,6 +161,13 @@ class Boat:
 
 class Plane:
     None
+
+class EnemySystem(esper.Processor):
+    def __init__(self):
+        super().__init__()
+    def process(self):
+        pass
+        #TODO: Update Enemies
 
 #class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
@@ -180,48 +214,158 @@ class BombSystem:
     
 
 
-""" class Terrain:
-    def __init__(self, scroll_speed = TERRAIN_SCROLL_SPEED, terrain_tile_width = SCREEN_WIDTH):
-        self.tileMatrix = []
-        self.terrain_tile_width = terrain_tile_width
+class Terrain:
+    def __init__(self,
+        scroll_delay = TERRAIN_SCROLL_DELAY,
+        terrain_width = (SCREEN_WIDTH // TILE_WIDTH),
+        terrain_height = ((SCREEN_HEIGHT // TILE_HEIGHT) * 2),
+        ):
+        self.tile_matrix = []
+        self.scroll_delay = scroll_delay
+        self.terrain_width = terrain_width
+        self.terrain_height = terrain_height
+
+        self.scroll_pos = TILE_HEIGHT
+
         self.initialized = False
+
+class Tiles(Enum):
+    WATER = 0
+    LAND = 1
 
 class TerrainTile:
 
-    def __init__(self, x, y, color, width, is_land):
-        self.rect = pygame.Rect(x, y, width, width)
-        self.color = color
-        self.width = width
-        self.is_land = is_land
+    def __init__(self, tile_type):
+        self.tile_type = tile_type
 
 class TerrainSystem(esper.Processor):
-    def __init__(self):
+    def __init__(self,
+        carving_center = (SCREEN_WIDTH // TILE_WIDTH // 2),
+        generation_steps = 6,
+        neighbors_for_murder = 4,
+        neighbors_for_rebirth = 3,
+        start_alive_prob = 0.35):
         super().__init__()
+        self.carving_center = carving_center
+        self.generation_steps = generation_steps
+        self.neighbors_for_murder = neighbors_for_murder
+        self.neighbors_for_rebirth = neighbors_for_rebirth
+        self.start_alive_prob = start_alive_prob
+        self.current_delay = 0
     def process(self):
         for ent, (terrain) in self.world.get_component(Terrain):
             if not (terrain.initialized):
-                for i in range(0, terrain.terrain_tile_width + 1):
-                    terrain.tileMatrix.append([])
-                #self.generate_initial_terrain(terrain) """
-
-"""     def generate_initial_terrain(self, terrain):
-        x = 0
-        y = SCREEN_HEIGHT - TILE_HEIGHT
-        row = 0
-
-        #build terrain from bottom up with one extra row off screen
-        for i in range(terrain.terrain_tile_width**2 + terrain.terrain_tile_width):
-            if x < (3 * TILE_WIDTH) or x > (SCREEN_WIDTH - (4 * TILE_WIDTH)): #3 tiles of land on each side
-                terrain.tileMatrix[row].append(TerrainTile(x, y, (0,random.randint(200,255),0), TILE_WIDTH, True))
+                #Initialized terrain to HEIGHTxWIDTH water tiles
+                for i in range(0, terrain.terrain_height):
+                    terrain.tile_matrix.append([])
+                    for j in range(0, terrain.terrain_width):
+                        terrain.tile_matrix[i].append(TerrainTile(Tiles.WATER))
+                #Then actually put it some effort and make it decent
+                self.generate_initial_terrain(terrain)
+                terrain.initialized = True
             else:
-                terrain.tileMatrix[row].append(TerrainTile(x, y, (0,0,random.randint(200,255)), TILE_WIDTH, False))
+                self.scroll(terrain)
 
-            x += TILE_WIDTH
-            if x == SCREEN_WIDTH:
-                row += 1
-                x = 0
-                y -= TILE_HEIGHT """
+    def generate_initial_terrain(self, terrain):
+        for i in range(0, terrain.terrain_height):
+            for j in range(0, 3):
+                terrain.tile_matrix[i][j].tile_type = Tiles.LAND
+            for j in range(terrain.terrain_width -3, terrain.terrain_width):
+                terrain.tile_matrix[i][j].tile_type = Tiles.LAND
+         
+    def carve(self, row, terrain):
+        for i in range(-3,4): #carve a six wide path
+            terrain.tile_matrix[row][self.carving_center + i].tile_type = Tiles.WATER
 
+        self.carving_center += random.randint(-1,1)
+        if(self.carving_center >= (terrain.terrain_width - 4)):
+            self.carving_center = terrain.terrain_width - 5
+        elif(self.carving_center <= 4):
+            self.carving_center = 5
+
+    def scroll(self, terrain):
+        self.current_delay += 1
+        if(self.current_delay >= terrain.scroll_delay):
+            terrain.scroll_pos -= 1
+            self.current_delay = 0
+        if(terrain.scroll_pos < 0):
+            terrain.scroll_pos = terrain.terrain_height - 1
+
+        if(terrain.scroll_pos == ROWS or terrain.scroll_pos == 0):
+            self.generate_chunk(terrain, self.generate_noise())
+
+    def generate_chunk(self, terrain, noise_map):
+        for i in range(0, len(noise_map)):
+            for j in range(0, len(noise_map[i])):
+                terrain.tile_matrix[i + ROWS % terrain.terrain_height][j] = noise_map[i][j]
+            self.carve(i + ROWS % terrain.terrain_height, terrain)
+
+    def generate_noise(self):
+        noise_map = []
+        for i in range(0, ROWS):
+            noise_map.append([])
+        for x in noise_map:
+            for i in range(0, COLUMNS):
+                x.append(Tiles.WATER)
+
+        noise_map = self.initialize_map(noise_map)
+
+        for i in range(self.generation_steps):
+            noise_map = self.sim_step(noise_map)
+
+        return noise_map
+
+    def sim_step(self, old_noise_map):
+        new_noise_map = []
+        for i in range(0, ROWS):
+            new_noise_map.append([])
+        for x in new_noise_map:
+            for i in range(0, COLUMNS):
+                x.append(Tiles.WATER)
+
+        for i in range(0, ROWS):
+            for j in range(0, COLUMNS):
+                neighbors = self.count_live_neighbors(old_noise_map, i, j)
+                if(old_noise_map[i][j] == Tiles.LAND):
+                    if(neighbors < self.neighbors_for_murder):
+                        new_noise_map[i][j] = Tiles.WATER
+                    else:
+                        new_noise_map[i][j] = Tiles.LAND
+                else:
+                    if(neighbors > self.neighbors_for_rebirth):
+                        new_noise_map[i][j] = Tiles.LAND
+                    else:
+                        new_noise_map[i][j] = Tiles.WATER
+
+        return new_noise_map
+
+    def count_live_neighbors(self, noise_map, x, y):
+        count = 0
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                neighbor_x = x + i
+                neighbor_y = y + j
+
+                if(i == 0 and j == 0): #don't do anything if you are looking at the cell whose neighbors you want to count
+                    dummy = 1
+                elif(neighbor_x < 0 or neighbor_x >= ROWS): #if cell has no above neighbors or below neighbors count those non-existance neighbors as dead
+                    count += 0
+                elif(neighbor_y < 0 or neighbor_y >= COLUMNS): #if cell has no right/left neighbors, count them as living
+                    count += 1
+                elif(noise_map[neighbor_x][neighbor_y] == Tiles.LAND): #if neighbor is alive, increase living neighbor count
+                    count += 1
+
+        return count
+
+    def initialize_map(self, noise_map):
+        for x in range(0, ROWS):
+            for y in range(0, COLUMNS):
+                if(random.random() < self.start_alive_prob): #randomly make cell alive
+                    noise_map[x][y] = Tiles.LAND
+        
+        return noise_map
+
+        
 """ class SpawnManager:
     #object spawn caps
     HELICOPTER_CAP = 5
@@ -533,256 +677,38 @@ class Player(pygame.sprite.Sprite):
         if (self.rect.y + self.speed) <= (SCREEN_HEIGHT - self.playerHeight): #keep player on screen
             self.rect.y += self.speed
 
+"""
 
-
-
-
-#class that generates the terrain
-class TerrainManager:
-    tileMatrix = []
-    scrollSpeed = TERRAIN_SCROLL_SPEED
-    terrainTileWidth = SCREEN_WIDTH // TILE_WIDTH #width of terrain in tiles
-    terrainTileHeight = terrainTileWidth #height of the terrain in tiles
-    CHUNK_HEIGHT = terrainTileHeight
-    carveCenterTile = (SCREEN_WIDTH // TILE_WIDTH) //2 #the column number where the center of the carver will start
-
-    #noise map generation parameters ====================
-    numOfGenerationSteps = 6 #number of times to go through kill/revive decisions
-    numOfAliveNeighborsRequiredForMurder = 4 #kill a living cell if it has fewer neighbors than this
-    numOfAliveNeighborsNeededForRebirth = 3 #revive a dead cell if it has more living neighbors than this
-    chanceToStartAlive = 0.35 #intial chance for a cell to start out as living
-    #=====================================================
-
-    def __init__(self):
-        for i in range(0,self.terrainTileWidth + 1):
-            self.tileMatrix.append([])
-        self.generateIntialTerrain()
-
-
-    #desc: guarantees that the player will never be land locked by carving a random path into the terrain, carves terrain row by row
-    #pre: matrixRow is a terrain matrix row
-    def carve(self, matrixRow):
-        for i in range(-3,4): #carve a six wide path
-            currentX = self.tileMatrix[matrixRow][self.carveCenterTile + i].rect.x #current x pos of the carvecenter neighbor
-            currentY = self.tileMatrix[matrixRow][self.carveCenterTile + i].rect.y #current y pos of the carvecenter neighbor
-            self.tileMatrix[matrixRow][self.carveCenterTile + i] = TerrainTile(currentX, currentY, (0,0,200), TILE_WIDTH, False)
-
-        self.carveCenterTile += random.randint(-1,1)
-        if(self.carveCenterTile >= (self.terrainTileWidth - 4)):
-            self.carveCenterTile = self.terrainTileWidth - 5
-        elif(self.carveCenterTile <= 4):
-            self.carveCenterTile = 5
-
-
-    #desc: builds a starting terrain tile-by-tile from the top right corner to the bottom right corner of the screen
-    def generateIntialTerrain(self):
-        x = 0 #start on left side of screen
-        y = SCREEN_HEIGHT - TILE_HEIGHT #start 1 row above what the camera can currently see
-        row = 0 
-
-        #build terrain from bottom up with one extra row off screen
-        for i in range(self.terrainTileWidth**2 + self.terrainTileWidth):
-            if x < (3 * TILE_WIDTH) or x > (SCREEN_WIDTH - (4 * TILE_WIDTH)): #3 tiles of land on each side
-                self.tileMatrix[row].append(TerrainTile(x, y, (0,random.randint(200,255),0), TILE_WIDTH, True)) #land
-            else: #all other tiles are water
-                self.tileMatrix[row].append(TerrainTile(x, y, (0,0,random.randint(200,255)), TILE_WIDTH, False)) #water
-            
-            x += TILE_WIDTH #x value for terrain cell
-            if x == SCREEN_WIDTH: #if we have just finished building a complete row
-                self.carve(row) #optional
-                row += 1 
-                x = 0 #move x back to the left side of the screen
-                y -= TILE_HEIGHT #y pos for tiles in next row
-
-
-    #draws all tiles
-    def draw(self):
-        for i in range(0,len(self.tileMatrix)):
-            for j in range(0,len(self.tileMatrix[i])):
-                self.tileMatrix[i][j].draw()
-
-
-    #scrolls the terrain down the screen
-    def scroll(self):
-        print(len(self.tileMatrix))
-        for i in range(0,len(self.tileMatrix)): #for each terrain row
-            for j in range(0,len(self.tileMatrix[i])): #for each tile in the current terrain row
-                self.tileMatrix[i][j].setY(self.tileMatrix[i][j].getY() + self.scrollSpeed) #increase y pos of each tile by scrollSpeed
-
-        if self.tileMatrix[-1][0].rect.top > 0: #if the top of the last terrain row enters the screen a new chunk must be generated
-            self.generateChunk(self.generateNoiseMap())
-
-        if self.tileMatrix[0][0].rect.top >= SCREEN_HEIGHT: #delete terrain rows that are no longer on the screen
-            self.tileMatrix.pop(0)
-
-
-    #desc: generates a chunk of terrain tiles based on a noise map 
-    #pre: noiseMap is boolean matrix
-    #post: a new chunk of terrain tiles are added to the terrain (aka tileMatrix)
-    def generateChunk(self, noiseMap):
-
-        tempList = [] #temp list to append to tile matrix
-
-        for noiseRow in noiseMap: #for each row in the noise map
-            tempList = [] #clear the temp list
-            for c in range(len(noiseRow)): #for each entry in the current noise map row
-                if noiseRow[c] or c == 0 or c == (len(noiseRow)-1): #if noise map contains true or we are on the left most column of the noise map or the right most column of the noise map
-                    tempList.append(TerrainTile(c*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,200,0), TILE_WIDTH, True)) #add land tile to the list
-                else:
-                    tempList.append(TerrainTile(c*TILE_WIDTH, self.tileMatrix[-1][0].rect.y - TILE_HEIGHT, (0,0,200), TILE_WIDTH, False)) #add water tile to the list
-            self.tileMatrix.append(tempList) #add the row to the terrain
-            self.carve(len(self.tileMatrix) - 1) #carve out land to guarantee path for player
-
-
-    #desc: generates an news map for the generateChunk function
-    #pre: 
-    #post: returns a martix of bools, generateChunk() will interpret true values as places to place land in the terrain (if tile is not on the outmost edge of the map)
-    def generateNoiseMap(self):
-        noiseMap = [] #intialize noiseMap, will be a matrix of bools
-        for i in range(self.CHUNK_HEIGHT): #add an empty list for each row (more intialization)
-            noiseMap.append([])
-        #fill all values in noise map with false (so that they default as water)
-        for x in noiseMap:
-            for i in range(self.terrainTileWidth): #make every rows column values false so that everything is water by default
-                x.append(False)
-
-        noiseMap = self.initialiseMap(noiseMap)  #randomly make some cells alive
-
-        for i in range(self.numOfGenerationSteps): #higher numbers of generation steps create a smoother terrain
-            noiseMap = self.doSimulationStep(noiseMap) #generate the "cells" aka islands
-
-        return noiseMap
-
-
-    #desc: (look up "Cellular Automata") a function that will interate through each cell of a noise map to determine if a cell 
-    #         needs to live or die based on the number of neighbors it has
-    #pre: noise map must be a matrix of bools, it must have self.CHUNK_HEIGHT number of rows
-    #post: some values of oldNoiseMap will be inverted based on how many alive neighbors they have and will be copied into newNoiseMap which will be returned by this function
-    def doSimulationStep(self, oldNoiseMap):
-        #initialize newNoiseMap to create a new bool matrix with all false values =================
-        newNoiseMap = []
-        for i in range(self.CHUNK_HEIGHT):
-            newNoiseMap.append([])
-        for x in newNoiseMap:
-            for i in range(self.terrainTileWidth): #make every row's column values false
-                x.append(False)
-        #==========================================================================================
-        
-        
-        for x in range(len(oldNoiseMap)): #for each row of oldNoiseMap
-            for y in range(len(oldNoiseMap[0])): #for each column of oldNoiseMap
-                nbs = self.countAliveNeighbors(oldNoiseMap, x, y) #check how many alive neighbors the cell (aka tile) has
-                if(oldNoiseMap[x][y]): #if cell is currently alive
-                    if(nbs < self.numOfAliveNeighborsRequiredForMurder): #kill it if it has too many neighbors
-                        newNoiseMap[x][y] = False
-                    else:
-                        newNoiseMap[x][y] = True
-                else: #if cell is currently dead
-                    if(nbs > self.numOfAliveNeighborsNeededForRebirth): #bring cell back to life if it has a lot of alive neighbors
-                        newNoiseMap[x][y] = True
-                    else:
-                        newNoiseMap[x][y] = False
-
-        return newNoiseMap
-
-
-    #desc: reports how many alive neighbors a cell currently has
-    #pre: map is a noise map (matrix of bools), x is noise map row, y is noise map column
-    #pos: returns the number of alive neighbors cell x,y has. Alive == True
-    def countAliveNeighbors(self,map, x, y): 
-        count = 0 #assume cell located at x,y has no alive neighbors
-        for i in range(-1,2): #for x-1, x, and x+1 rows in map
-            for j in range(-1,2): #for y-1, y, and y+1 columns in map
-                neighbor_x = x+i #row of current neighbor
-                neighbor_y = y+j #column of current neighbor
-
-                if(i == 0 and j == 0): #don't do anything if you are looking at the cell whose neighbors you want to count
-                    dummy = 1
-                elif(neighbor_x < 0 or neighbor_x >= len(map)): #if cell has no above neighbors or below neighbors count those non-existance neighbors as dead
-                    count += 0
-                elif(neighbor_y < 0 or neighbor_y >= len(map[0])): #if cell has no right/left neighbors, count them as living
-                    count += 1
-                elif(map[neighbor_x][neighbor_y]): #if neighbor is alive, increase living neighbor count
-                    count += 1
-
-        return count
-
-
-    #desc: function used to randomly make some cells alive
-    #pre: map is a bool matrix (noiseMap)
-    #post: random cells of the noise map "map" are set equal to true
-    def initialiseMap(self,map):
-        #for each cell in the map:
-        for x in range(self.CHUNK_HEIGHT):
-            for y in range(self.terrainTileWidth):
-                if(random.random() < self.chanceToStartAlive): #randomly make cell alive
-                    map[x][y] = True
-        
-        return map
-
- 
-    #desc: checks to see if another object is colliding with land
-    #pre: other must have a rect property
-    #post: returns true if "other" sprite is colliding with land
-    def checkForLandCollisions(self, other):
-        collisionDetected = False
-        for r in range(len(self.tileMatrix)): #for each terrain row
-            for c in range(len(self.tileMatrix[r])): #for each terrain column
-                if self.tileMatrix[r][c].isLand and self.tileMatrix[r][c].rect.colliderect(other.rect): #for each tile, if tile is land and is colliding with "other"
-                    collisionDetected = True
-                    break
-        
-        return collisionDetected
-
-
-
-
-#put all your draw calls here
-def DrawEverything():
-    terrain.draw()
-    player.draw()
-    spawnManager.drawObjects()
-    for bullet in bullets:
-        bullet.draw()
-    pygame.display.update() """
-    
-
-clock = pygame.time.Clock()
 world = esper.World()
+
 player = world.create_entity(
-    Position(((SCREEN_WIDTH * 0.5) - (PLAYER_WIDTH * 0.5) + 10), (SCREEN_HEIGHT - PLAYER_HEIGHT)),
+    Position(14, 27),
     Player(3, 100, 100, 0.5, 0.05),
     Velocity(0,0),
-    Renderable(pygame.image.load("./plane2.png")),
+    Renderable(pygame.image.load("./plane.png")),
     Collider()
 )
-# world.create_entity(
-"""     Bomb(),
-    Position(500, 500),
-    Renderable(pygame.image.load("./bullet.png")),
-    Collider()
-) """
 
+terrain = world.create_entity(
+    Terrain()
+)
 
 render_system = RenderSystem(win, BACKGROUND_COLOR)
 collider_system = ColliderSystem()
 movement_system = MovementSystem()
-# bomb_system = BombSystem()
+terrain_system = TerrainSystem()
 
 world.add_processor(render_system)
 world.add_processor(collider_system, 1)
 world.add_processor(movement_system, 2)
-# world.add_processor(bomb_system)
+world.add_processor(terrain_system, 3)
 
 run = True
-bullets = [] #a list for all bullets on screen
 clock = pygame.time.Clock()
 
 
 #Main Game Loop
 while run:
-    clock.tick(MAX_FRAME_RATE)
-
 
     #================================= LISTEN FOR EVENTS ========================================================
     for event in pygame.event.get():
@@ -790,69 +716,18 @@ while run:
             run = False 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                world.create_entity(
-                    Bullet(),
-                    Position(
-                        world.component_for_entity(player, Position)
-                    )
-                )
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
-        world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
-    if keys[pygame.K_RIGHT]:
-        world.component_for_entity(player, Velocity).x = PLAYER_SPEED
-    if keys[pygame.K_UP]:
-        world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
-    if keys[pygame.K_DOWN]:
-        world.component_for_entity(player, Velocity).y = PLAYER_SPEED
-
+                pass
+                #TODO: Fire Bullet
+            if event.key == pygame.K_LEFT:
+                world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
+            if event.key == pygame.K_RIGHT:
+                world.component_for_entity(player, Velocity).x = PLAYER_SPEED
+            if event.key == pygame.K_UP:
+                world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
+            if event.key == pygame.K_DOWN:
+                world.component_for_entity(player, Velocity).y = PLAYER_SPEED
     world.process()
-    clock.tick(FPS)
-    #==========================================================================================================
-
-
-    # #================================= SPAWN OBJECTS =========================================================
-    # spawnManager.spawnObjects(terrain, spawnManager)
-    # #=========================================================================================================
-
-
-    # #================================== TELL EVERYTHING THAT NEEDS TO MOVE TO MOVE HERE =======================
-    # terrain.scroll()
-    # spawnManager.scrollObjects()
-    # for bullet in bullets:
-    #     bullet.move()
-    # spawnManager.moveObjects()
-
-    # #==========================================================================================================
-
-
-    # #================================== DESPAWN OFF SCREEN ENTITIES ===========================================
-    # for bullet in bullets:
-    #     if bullet.offScreen():
-    #         bullets.remove(bullet)
-    # spawnManager.despawnOffScreenObjects()
-
-    # #==========================================================================================================
-
-
-    # #================================== DETECT COLLISIONS =====================================================
-    # if terrain.checkForLandCollisions(player):  #if the player hits land
-    #     player.kill()
-    # objtype = spawnManager.detectCollision(player) #returns object.m_type the player collided with
-    # if objtype == "fuel": #Player collided with fuel strip
-    #     player.refuel()
-    # elif objtype != False: #Everything else other than the fuel strip currently kills player
-    #     player.kill()
-
-    # spawnManager.detectEnemyBulletCollision(bullets)
-    
-    # #==========================================================================================================
-
-    # #================================= DEFUEL PLANE ===========================================================
-    # player.defuel()
-
-    #DrawEverything() #redraws everything to the screen
-
+    clock.tick(MAX_FPS)
 
 pygame.quit()
 
