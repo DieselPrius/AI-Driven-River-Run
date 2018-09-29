@@ -365,6 +365,8 @@ class TerrainSystem(esper.Processor):
             self.current_delay = 0
             for _, (pos) in self.world.get_component(Position):
                 pos.y += 1
+            player_pos = self.world.component_for_entity(player,Position)
+            player_pos.y -= 1
 
         if(terrain.scroll_pos == ((terrain.terrain_height // 2) - 1)):
             #print("scroll_pos = " + str(terrain.scroll_pos) + "   ((terrain.terrain_height // 2) - 1) = " + str(((terrain.terrain_height // 2) - 1)))
@@ -372,6 +374,7 @@ class TerrainSystem(esper.Processor):
             for x in range(terrain.terrain_width):
                 for y in range(terrain.terrain_height // 2): #0 to 29
                     terrain.tile_matrix[x][y + (terrain.terrain_height // 2)].tile_type = terrain.tile_matrix[x][y].tile_type
+            
             #load new chunck into upper terrain
             self.generate_chunk(terrain, self.generate_noise())
             #update scroll position
@@ -383,9 +386,9 @@ class TerrainSystem(esper.Processor):
         for x in range(0,terrain.terrain_height // 2): #0 to 29
             for y in range(0,terrain.terrain_width): #0 to 29
                 terrain.tile_matrix[x][y].tile_type = noise_map[y][x]
-        for y in range(0, len(noise_map[0])):
-            pass    
-            #self.carve((terrain.scroll_pos + ROWS + y) % terrain.terrain_height, terrain)
+        for y in range((terrain.terrain_height // 2) - 1, -1, -1): #29 to 0 
+                print("           y = " + str(y))
+                self.carve(y,terrain)
 
     #Initializes the noise map lists and then simulates the automata
     def generate_noise(self):
@@ -520,16 +523,20 @@ while run:
                 #TODO: Fire Bullet
             if event.key == pygame.K_LEFT:
                 #Move the player left.
-                world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
+                if(world.component_for_entity(player,Position).x - 1 >= 0):
+                    world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
             if event.key == pygame.K_RIGHT:
                 #Move the player right.
-                world.component_for_entity(player, Velocity).x = PLAYER_SPEED
+                if(world.component_for_entity(player,Position).x + 1 <= (COLUMNS - 1)):
+                    world.component_for_entity(player, Velocity).x = PLAYER_SPEED
             if event.key == pygame.K_UP:
                 #Move the player up.
-                world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
+                if(world.component_for_entity(player,Position).y - 1 >= 0):
+                    world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
             if event.key == pygame.K_DOWN:
                 #Move the player down.
-                world.component_for_entity(player, Velocity).y = PLAYER_SPEED
+                if(world.component_for_entity(player,Position).y + 1 <  ROWS):
+                    world.component_for_entity(player, Velocity).y = PLAYER_SPEED
     world.process()
     #Pauses the thread if the frame was quick to process, effectively limiting the framerate.
     clock.tick(MAX_FPS)
