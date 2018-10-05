@@ -50,7 +50,7 @@ class Velocity:
 
 #Player-Specific Component
 class Player:
-    def __init__(self, lives=1, fuel=100, max=100, fuel_rate=0.5, defuel_rate=0.05):
+    def __init__(self, lives=3, fuel=100, max=100, fuel_rate=0.5, defuel_rate=0.05):
         self.lives = lives
         self.fuel = fuel
         self.max = max
@@ -108,10 +108,10 @@ class RenderSystem(esper.Processor):
 
 #Collision Component
 class Collider:
-    def __init__(self, width=1, height=1, collider_class="terrain"):
+    def __init__(self, width=1, height=1):
         self.width = width * TILE_WIDTH
         self.height = height * TILE_HEIGHT
-        self.collider_class = collider_class
+        #self.collider_class = collider_class
 
     def colliderToRect(self, posComp):
         return pygame.Rect(posComp.x * TILE_WIDTH, posComp.y * TILE_HEIGHT, self.width, self.height)
@@ -123,42 +123,50 @@ class ColliderSystem(esper.Processor):
         super().__init__()
     def process(self):
         player_pos = world.component_for_entity(player, Position)
-        player_collider = world.component_for_entity(player, Collider).colliderToRect(player_pos)
-        #print("player_pos " + str(player_pos.x) + ", " + str(player_pos.y))
+        player_collider = world.component_for_entity(player, Collider)
+        # player_collider = world.component_for_entity(player, Collider).colliderToRect(player_pos)
 
-        #print("       player_collider " + str(player_collider.x) + " , " + str(player_collider.y) + " , " + str(player_collider.w) + " , " + str(player_collider.h))
-        if(self.checkForLandCollision(player_collider)):
+        if(self.checkForLandCollision(player_pos, player_collider)):
             print("player hit land")
 
 
         #check for terrain collisions
         for ent, (pos, col) in self.world.get_components(Position, Collider):
-            #print("############################################# " + str(type(ent)) )
             pass
 
 
     #other is a rect
-    def checkForLandCollision(self, other):
-        landTileRects = []
+    def checkForLandCollision(self, otherPos, otherCol):
+        collisionDetected = False
+
         for _, terrain in self.world.get_component(Terrain):
             for x in range(terrain.terrain_width):
-                row = 0
+                row = 0 #the on screen row of the terrain tile
                 for y in range((terrain.scroll_pos - (terrain.terrain_height // 2)) , terrain.scroll_pos):
-                    if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND):
-                        #print("                           land at " + str(x) + " , " + str(y))
-                        landTileRects.append(pygame.Rect(x*TILE_WIDTH, row*TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT))
+                    if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND and (x == otherPos.x and row == otherPos.y)): #if tile is land and position of other and land match
+                        collisionDetected = True
+                        break
                     row += 1
 
-        collisionDetected = False
-        #print(len(landTileRects))
-        for landTile in landTileRects:
-            if landTile.colliderect(other):
-                #print("                          player hit land at " + str(landTile.x) + " , " + str(landTile.y))
-                #print("                                 other " + str(other.x) + " , " + str(other.y))
-                collisionDetected = True
-                break
-        
         return collisionDetected
+
+    #def checkForLandCollision(self, other):
+        # landTileRects = []
+        # for _, terrain in self.world.get_component(Terrain):
+        #     for x in range(terrain.terrain_width):
+        #         row = 0
+        #         for y in range((terrain.scroll_pos - (terrain.terrain_height // 2)) , terrain.scroll_pos):
+        #             if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND):
+        #                 landTileRects.append(pygame.Rect(x*TILE_WIDTH, row*TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT))
+        #             row += 1
+
+        # collisionDetected = False
+        # for landTile in landTileRects:
+        #     if landTile.colliderect(other):
+        #         collisionDetected = True
+        #         break
+        
+        # return collisionDetected
 
 
 #Fuelstrip Component
@@ -188,11 +196,32 @@ class MovementSystem(esper.Processor):
     def __init__(self):
         super().__init__()
     def process(self):
-        for ent, (vel, pos) in self.world.get_components(Velocity, Position):
+        #move player
+        counter = 0
+        for ent, (p, vel, pos) in self.world.get_components(Player, Velocity, Position):
+            print("Player #" + str(counter))
+            counter += 1
             pos.x += vel.x
             pos.y += vel.y
             vel.x = 0
             vel.y = 0
+
+        #move boat
+        for ent, (boat, vel, pos) in self.world.get_components(Boat, Velocity, Position):
+            if(pos.x >= COLUMNS or pos.x <= 0):
+                vel.x = -vel.x
+                
+            pos.x += vel.x
+
+        #move helicopter
+
+
+
+        # counter = 0
+        # for ent, (boat) in self.world.get_component(Boat):
+        #     print("moving boat " + str(counter))
+        #     counter += 1
+            
 
 
 class Bullet:
@@ -387,7 +416,7 @@ class TerrainSystem(esper.Processor):
             for y in range(0,terrain.terrain_width): #0 to 29
                 terrain.tile_matrix[x][y].tile_type = noise_map[y][x]
         for y in range((terrain.terrain_height // 2) - 1, -1, -1): #29 to 0 
-                print("           y = " + str(y))
+                #print("           y = " + str(y))
                 self.carve(y,terrain)
 
     #Initializes the noise map lists and then simulates the automata
@@ -466,11 +495,6 @@ class TerrainSystem(esper.Processor):
 #TODOCONT: Logic goes in systems, state in components.
 
 
-
-
-
-
-
 world = esper.World()
 
 #Create the player entity. Has a position, velocity, collider, it can be rendered,
@@ -480,8 +504,17 @@ player = world.create_entity(
     Player(3, 100, 100, 0.5, 0.05),
     Velocity(0,0),
     Renderable(pygame.image.load("./plane.png")),
-    Collider(1,1,"player")
+    Collider(1,1)
 )
+
+world.create_entity(
+    Boat(),
+    Position(15,15),
+    Velocity(1,0),
+    Renderable(pygame.image.load("./Boat.png")),
+    Collider(2,1)
+)
+
 
 #Create the terrain entity. Simply has Terrain component.
 terrain = world.create_entity(
