@@ -169,8 +169,8 @@ class ColliderSystem(esper.Processor):
     def checkCollision(self, entOnePos, entOneCollider, entTwoPos, entTwoCollider):
         entOneRect = entOneCollider.colliderToRect(entOnePos)
         entTwoRect = entTwoCollider.colliderToRect(entTwoPos)
-        # pygame.draw.rect(win,(0,0,0),entTwoRect)
-        # pygame.display.flip()
+        #pygame.draw.rect(win,(0,0,0),entTwoRect)
+        #pygame.display.flip()
         return entOneRect.colliderect(entTwoRect)
 
 
@@ -355,33 +355,44 @@ class SpawnSystem(esper.Processor):
         for i in range(s.spawnCount):
             t = self.world.component_for_entity(terrain,Terrain)
             randomX = random.randint(0, t.terrain_width)
-            randomY = random.randint((-(t.terrain_height // 2) - 1), -1) #-1 to -30
+            randomY = random.randint(-(t.terrain_height // 2), -1)
             #if boat will not spawn in on land at this random location, then spawn it
-            if(not self.CheckForNewChunkLandCollision(Position(randomX,randomX),Collider(BOAT_WIDTH,BOAT_HEIGHT))):
-                world.create_entity(
-                    Boat(),
-                    Position(randomX,randomY),
-                    Velocity(BOAT_START_VELOCITY_X,BOAT_START_VELOCITY_Y),
-                    Renderable(pygame.image.load("./Boat2.png")),
-                    Collider(BOAT_WIDTH,BOAT_HEIGHT)
-                )
+            if(not self.CheckForNewChunkLandCollision(Position(randomX,randomY),Collider(BOAT_WIDTH,BOAT_HEIGHT))):
+                self.spawnBoat(randomX, randomY)
 
+    #this functions appears to not be working
     def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
         landTileRects = []
         #create a collider for all land tiles in the newly created chunck ...
         for _, terrain in world.get_component(Terrain):
             for x in range(terrain.terrain_width): #for each column
+                #print("column " + str(x))
                 for y in range(0, terrain.terrain_height // 2): #for each row in the new chunck
                     if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND): #if tile is land create a Rect for it
                         landTileRects.append(pygame.Rect(x*TILE_WIDTH, (y-(terrain.terrain_height // 2))*TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT))
+                #         print("(" + str(landTileRects[-1].x) + "," + str(landTileRects[-1].y) + ")",end='')
+                #         print("(" + str(x) + "," + str(y) + ")")
+                # print("END COLUMN")
+
+        #print("positionComponent = " + str(positionComponent.x) + "   " + str(positionComponent.y))
         other = colliderComponent.colliderToRect(positionComponent)
+        #print("other = " + str(other.x) + "  " + str(other.y) + "   " + str(other.width) + "   " + str(other.height))
         collisionDetected = False
         for landTile in landTileRects: #for each land tile rect
             if landTile.colliderect(other): #check if the 'other' collider is hitting a land tile
+                print("COLLISION")
                 collisionDetected = True
                 break
-        
         return collisionDetected
+
+    def spawnBoat(self, xpos, ypos):
+        world.create_entity(
+            Boat(),
+            Position(xpos, ypos),
+            Velocity(BOAT_START_VELOCITY_X,BOAT_START_VELOCITY_Y),
+            Renderable(pygame.image.load("./Boat2.png")),
+            Collider(BOAT_WIDTH,BOAT_HEIGHT)
+        )
 
 """ class Bomb:
     def __init__(self, width = BOMB_WIDTH, height = BOMB_HEIGHT):
@@ -525,7 +536,8 @@ class TerrainSystem(esper.Processor):
                 terrain.tile_matrix[x][y].tile_type = noise_map[y][x]
         for y in range((terrain.terrain_height // 2) - 1, -1, -1): #29 to 0 
                 self.carve(y,terrain)
-
+   
+        #spawn in enemies in the new chunk
         self.world.get_processor(SpawnSystem).spawnEnemies()
 
     #Initializes the noise map lists and then simulates the automata
@@ -648,8 +660,9 @@ spawn_system = SpawnSystem()
 world.add_processor(render_system)
 world.add_processor(collider_system, 1)
 world.add_processor(movement_system, 2)
-world.add_processor(terrain_system, 3)
-world.add_processor(spawn_system,4)
+world.add_processor(spawn_system, 3)
+world.add_processor(terrain_system, 4)
+
 
 
 #Is the game running?
