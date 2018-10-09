@@ -28,7 +28,7 @@ BOMB_WIDTH = 30
 #Bomb height, in pixels.
 BOMB_HEIGHT = 30
 #Frames to wait between scrolls, in frames
-TERRAIN_SCROLL_DELAY = 40
+TERRAIN_SCROLL_DELAY = 30
 PLAYER_START_POS_X = 14
 PLAYER_START_POS_Y = 29
 
@@ -70,10 +70,10 @@ class Player:
         if(self.lives == 0):
             print("GAME OVER") #load title screen etc
         world.get_processor(TerrainSystem).clearTerrain() #clear terrain
-        world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain,Terrain)) #re-intialize terrain
         for ent,_ in world.get_component(Position): #clear all enemy entities
-            if(ent != player):
+            if(ent != player): #dont delete player
                 world.delete_entity(ent,True) #clear all enemy entities
+        world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain,Terrain)) #re-intialize terrain
         world.component_for_entity(player,Position).x = PLAYER_START_POS_X #change player position
         world.component_for_entity(player,Position).y = PLAYER_START_POS_Y #change player position
 
@@ -128,6 +128,7 @@ class RenderSystem(esper.Processor):
 
 #Collision Component
 class Collider:
+    #width and height are in tiles, not pixels
     def __init__(self, width=1, height=1):
         self.width = width * TILE_WIDTH
         self.height = height * TILE_HEIGHT
@@ -159,8 +160,8 @@ class ColliderSystem(esper.Processor):
         collisionDetected = False
         player_pos        = self.world.component_for_entity(player,Position)
         player_collider   = self.world.component_for_entity(player,Collider)
-        for ent, (pos, col) in self.world.get_components(Position, Collider):      
-            if(ent != player and self.checkCollision(player_pos, player_collider, pos, col)):
+        for ent, (_, pos, col) in self.world.get_components(Enemy, Position, Collider):      
+            if(self.checkCollision(player_pos, player_collider, pos, col)):
                 collisionDetected = True
                 break
         return collisionDetected     
@@ -198,42 +199,6 @@ class ColliderSystem(esper.Processor):
         
         return collisionDetected
     
-
-
-    #other is a rect
-    # def checkForLandCollision(self, otherPos, otherCol):
-    #     collisionDetected = False
-
-    #     for _, terrain in self.world.get_component(Terrain):
-    #         for x in range(terrain.terrain_width):
-    #             row = 0 #the on screen row of the terrain tile
-    #             for y in range((terrain.scroll_pos - (terrain.terrain_height // 2)) , terrain.scroll_pos):
-    #                 if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND and (x == otherPos.x and row == otherPos.y)): #if tile is land and position of other and land match
-    #                     collisionDetected = True
-    #                     break
-    #                 row += 1
-
-    #     return collisionDetected
-
-    #def checkForLandCollision(self, other):
-        # landTileRects = []
-        # for _, terrain in self.world.get_component(Terrain):
-        #     for x in range(terrain.terrain_width):
-        #         row = 0
-        #         for y in range((terrain.scroll_pos - (terrain.terrain_height // 2)) , terrain.scroll_pos):
-        #             if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND):
-        #                 landTileRects.append(pygame.Rect(x*TILE_WIDTH, row*TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT))
-        #             row += 1
-
-        # collisionDetected = False
-        # for landTile in landTileRects:
-        #     if landTile.colliderect(other):
-        #         collisionDetected = True
-        #         break
-        
-        # return collisionDetected
-
-
 #Fuelstrip Component
 class Fuelstrip:
     def __init__(self):
@@ -267,10 +232,14 @@ class MovementSystem(esper.Processor):
 
     def process(self):
         self.currentDelay += 1
-        if(self.currentDelay >= self.movementDelay):
+        if(self.currentDelay >= self.movementDelay): #move everything every movementDelay number of frames
             self.currentDelay = 0
             self.movePlayer()
             self.moveBoats()
+            #TODO: WRITE OTHER ENEMY MOVEMENT FUNCTIONS
+            #self.moveJets()
+            #self.moveHelit()
+            #etc.
             
     def movePlayer(self):
         for ent, (p, vel, pos) in self.world.get_components(Player, Velocity, Position):
@@ -281,23 +250,17 @@ class MovementSystem(esper.Processor):
 
     def moveBoats(self):
         for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
-            if(pos.y >= 0):
+            if(pos.y >= 0): #don't move boats left/right until they are on screen
                 if(self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x,pos.y),col)): #if boat will hit land at its next location
                     vel.x = -vel.x #change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False) #flip image
                 pos.x += vel.x #change position based on velocity
 
-
-        # counter = 0
-        # for ent, (boat) in self.world.get_component(Boat):
-        #     print("moving boat " + str(counter))
-        #     counter += 1
-            
-
-
 class Bullet:
     None
 
+class Enemy:
+    None
 
 #Collision System
 class BulletSystem(esper.Processor):
@@ -329,19 +292,12 @@ class EnemySystem(esper.Processor):
 
 #class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
-    #def __init__(self, max_heli, max_jet, max_boat, max_bomb, max_fuel):
-        # self.max_heli = max_heli
-        # self.max_jet = max_jet
-        # self.max_boat = max_boat
-        # self.max_bomb = max_bomb
-        # self.max_fuel = max_fuel
     def __init__(self):
-        self.heliCount = 0
-        self.jetCount = 0
-        self.boatCount = 0
-        self.bombCount = 0
-        self.fuelCount = 0
-        self.spawnCount = 5
+        self.enemy_type_count = 7
+        self.initial_spawn_attempts = 5
+        self.chunks_required_to_increase_spawn_attempts = 2 #spawn attempts will after this many new chunks have been generated
+        self.chunk_generation_count = 0 #how many times a new chunck has been generated
+        self.spawn_attempts = 5
 
 #TODO: Implement this system.
 #This system is currently not added to the world, and thus is never processed.
@@ -352,48 +308,84 @@ class SpawnSystem(esper.Processor):
         None
 
     def spawnEnemies(self):
-        s = self.world.component_for_entity(spawner,Spawner)
-        for i in range(s.spawnCount):
-            t = self.world.component_for_entity(terrain,Terrain)
-            randomX = random.randint(0, t.terrain_width)
-            randomY = random.randint(-(t.terrain_height // 2), -1)
-            #if boat will not spawn in on land at this random location, then spawn it
-            if(not self.CheckForNewChunkLandCollision(Position(randomX,randomY),Collider(BOAT_WIDTH,BOAT_HEIGHT))):
-                self.spawnBoat(randomX, randomY)
+        the_spawner = self.world.component_for_entity(spawner,Spawner)
+        the_spawner.chunk_generation_count += 1
+        the_spawner.spawn_attempts = (the_spawner.chunk_generation_count // the_spawner.chunks_required_to_increase_spawn_attempts) + the_spawner.initial_spawn_attempts
 
-    #this functions appears to not be working
+        for i in range(the_spawner.spawn_attempts):
+            the_terrain = self.world.component_for_entity(terrain,Terrain)
+            randomX = random.randint(0, the_terrain.terrain_width)
+            randomY = random.randint(-(the_terrain.terrain_height // 2), -1)
+
+            randomNumber = random.randint(1,the_spawner.enemy_type_count)
+
+            if(randomNumber == 1):
+                self.spawnBoat(randomX, randomY)
+            elif(randomNumber == 2):
+                self.spawnHeli(randomX, randomY)
+            elif(randomNumber == 3):
+                self.spawnJet(randomX, randomY)
+            elif(randomNumber == 4):
+                self.spawnBomb(randomX, randomY)
+            elif(randomNumber == 5):
+                self.spawnEnhancedHeli(randomX, randomY)
+            elif(randomNumber == 6):
+                self.spawnEnhancedJet(randomX, randomY)
+            elif(randomNumber == 7):
+                self.spawnTurretBoat(randomX, randomY)
+
+
+    def spawnBoat(self, xpos, ypos):
+        #if boat will not spawn on land at this rand x,y position
+        if(not self.CheckForNewChunkLandCollision(Position(xpos,ypos),Collider(BOAT_WIDTH,BOAT_HEIGHT))):
+            world.create_entity(
+                Enemy(), #all enemies must have this component for enemy-player collisions to work
+                Boat(), #usefull for the moveBoat function
+                Position(xpos, ypos),
+                Velocity(BOAT_START_VELOCITY_X,BOAT_START_VELOCITY_Y),
+                Renderable(pygame.image.load("./Boat2.png")),
+                Collider(BOAT_WIDTH,BOAT_HEIGHT)
+            )
+
+    def spawnHeli(self, xpos, ypos):
+        print("spawnHeli()")
+
+    def spawnJet(self, xpos, ypos):
+        print("spawnJet()")
+
+    def spawnBomb(self, xpos, ypos):
+        print("spawnBomb()")
+    
+    def spawnEnhancedHeli(self, xpos, ypos):
+        print("spawnEnhancedHeli()")
+
+    def spawnEnhancedJet(self, xpos, ypos):
+        print("spawnEnhancedJet()")
+
+    def spawnTurretBoat(self, xpos, ypos):
+        print("spawnTurretBoat()")
+
+    def spawnFuelStrips(self):
+        print("spawnFuelStrips()")
+
+    #returns true if the an entity will spawn in on land, this checks for OFF-SCREEN LAND COLLISIONS
     def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
         landTileRects = []
         #create a collider for all land tiles in the newly created chunck ...
         for _, terrain in world.get_component(Terrain):
             for x in range(terrain.terrain_width): #for each column
-                #print("column " + str(x))
                 for y in range(0, terrain.terrain_height // 2): #for each row in the new chunck
                     if(terrain.tile_matrix[x][y].tile_type == Tiles.LAND): #if tile is land create a Rect for it
                         landTileRects.append(pygame.Rect(x*TILE_WIDTH, (y-(terrain.terrain_height // 2))*TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT))
-                #         print("(" + str(landTileRects[-1].x) + "," + str(landTileRects[-1].y) + ")",end='')
-                #         print("(" + str(x) + "," + str(y) + ")")
-                # print("END COLUMN")
-
-        #print("positionComponent = " + str(positionComponent.x) + "   " + str(positionComponent.y))
         other = colliderComponent.colliderToRect(positionComponent)
-        #print("other = " + str(other.x) + "  " + str(other.y) + "   " + str(other.width) + "   " + str(other.height))
         collisionDetected = False
         for landTile in landTileRects: #for each land tile rect
             if landTile.colliderect(other): #check if the 'other' collider is hitting a land tile
-                print("COLLISION")
                 collisionDetected = True
                 break
         return collisionDetected
 
-    def spawnBoat(self, xpos, ypos):
-        world.create_entity(
-            Boat(),
-            Position(xpos, ypos),
-            Velocity(BOAT_START_VELOCITY_X,BOAT_START_VELOCITY_Y),
-            Renderable(pygame.image.load("./Boat2.png")),
-            Collider(BOAT_WIDTH,BOAT_HEIGHT)
-        )
+    
 
 """ class Bomb:
     def __init__(self, width = BOMB_WIDTH, height = BOMB_HEIGHT):
@@ -629,7 +621,9 @@ player = world.create_entity(
     Collider(1,1)
 )
 
+#manually spawn a boat for testing
 world.create_entity(
+    Enemy(),
     Boat(),
     Position(3,5),
     Velocity(1,0),
