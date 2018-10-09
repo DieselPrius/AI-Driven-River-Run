@@ -280,10 +280,11 @@ class MovementSystem(esper.Processor):
             vel.y = 0
 
     def moveBoats(self):
-        for ent, (boat, vel, pos, col) in self.world.get_components(Boat, Velocity, Position, Collider):
+        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
             if(pos.y >= 0):
                 if(self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x,pos.y),col)): #if boat will hit land at its next location
                     vel.x = -vel.x #change direction
+                    rend.sprite = pygame.transform.flip(rend.sprite, True, False) #flip image
                 pos.x += vel.x #change position based on velocity
 
 
