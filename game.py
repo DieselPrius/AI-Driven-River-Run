@@ -34,8 +34,12 @@ PLAYER_START_POS_Y = 29
 
 BOAT_WIDTH = 3
 BOAT_HEIGHT = 2
+FUEL_WIDTH = 1
+FUEL_HEIGHT = 2
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
+
+fuelhud = 0
 
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
@@ -58,7 +62,7 @@ class Velocity:
 
 #Player-Specific Component
 class Player:
-    def __init__(self, lives=3, fuel=100, max=100, fuel_rate=0.5, defuel_rate=0.05):
+    def __init__(self, lives=3, fuel=100, max=100, fuel_rate=20, defuel_rate= 1):
         self.lives = lives
         self.fuel = fuel
         self.max = max
@@ -67,6 +71,7 @@ class Player:
 
     def kill(self):
         self.lives -= 1
+        self.fuel = self.max
         if(self.lives == 0):
             print("GAME OVER") #load title screen etc
         world.get_processor(TerrainSystem).clearTerrain() #clear terrain
@@ -77,6 +82,17 @@ class Player:
         world.component_for_entity(player,Position).x = PLAYER_START_POS_X #change player position
         world.component_for_entity(player,Position).y = PLAYER_START_POS_Y #change player position
 
+    def refuel(self):
+        if self.fuel + self.fuel_rate <= self.max:
+            self.fuel += self.fuel_rate #refuel player at fuel_rate
+        else:
+            self.fuel += self.max - self.fuel #top off player
+
+    def defuel(self):
+        if self.fuel - self.defuel_rate > 0:
+            self.fuel -= self.defuel_rate #deduct the defuel rate
+        else:
+            world.component_for_entity(player,Player).kill() #kill player if out of fuel
 
 #Render Component
 class Renderable:
@@ -121,8 +137,14 @@ class RenderSystem(esper.Processor):
                     row += 1
 
         #Render the Entities . . .
-        for ent, (pos, render) in self.world.get_components(Position, Renderable):
+        for ent, (pos, render, type) in self.world.get_components(Position, Renderable, Type):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
+        #Display fuel level
+        p = world.component_for_entity(player, Player)
+        myfont = pygame.font.SysFont("Times New Roman", 30)
+        textsurface = myfont.render(str(p.fuel), False, (255, 0, 0))
+        win.blit(textsurface, (0, 0))
         pygame.display.flip()
 
 
@@ -137,31 +159,43 @@ class Collider:
     def colliderToRect(self, posComp):
         return pygame.Rect(posComp.x * TILE_WIDTH, posComp.y * TILE_HEIGHT, self.width, self.height)
 
-
+#Type Component
+class Type:
+    def __init__(self, type):
+        self.type = type
 
 class ColliderSystem(esper.Processor):
     def __init__(self):
         super().__init__()
 
     def process(self):
+        collision = self.checkPlayerEnemyCollisions()
+
         #check for player-land collisions
         if( self.checkForLandCollision(world.component_for_entity(player, Position), world.component_for_entity(player, Collider)) ):
             print("player hit land")
             self.world.component_for_entity(player,Player).kill()
 
         #check for player-enemy collisions
-        if(self.checkPlayerEnemyCollisions()):
+        if(collision == "collision"):
             print("player hit enemy")
             self.world.component_for_entity(player,Player).kill()
+
+        if(collision == "fuel"):
+            print("player hit fuelstrip")
+            self.world.component_for_entity(player, Player).refuel()
 
     #returns true if the player hits land, otherwise false
     def checkPlayerEnemyCollisions(self):
         collisionDetected = False
         player_pos        = self.world.component_for_entity(player,Position)
         player_collider   = self.world.component_for_entity(player,Collider)
-        for ent, (pos, col) in self.world.get_components(Position, Collider):      
-            if(ent != player and self.checkCollision(player_pos, player_collider, pos, col)):
-                collisionDetected = True
+        for ent, (pos, col, typ) in self.world.get_components(Position, Collider, Type):
+            if(typ.type == "fuel" and self.checkCollision(player_pos, player_collider, pos, col)):
+                collisionDetected = "fuel"
+                break
+            elif(ent != player and self.checkCollision(player_pos, player_collider, pos, col)):
+                collisionDetected = "collision"
                 break
         return collisionDetected     
 
@@ -235,7 +269,7 @@ class ColliderSystem(esper.Processor):
 
 
 #Fuelstrip Component
-class Fuelstrip:
+class FuelStrip:
     def __init__(self):
         None
         #Stateless component, essentially functions as a flag.
@@ -247,7 +281,7 @@ class RefuelingSystem(esper.Processor):
         super().__init__()
     def process(self):
         #Refueling strip's components
-        for ent_1, (ref, col_1) in self.world.get_components(Fuelstrip, Collider):
+        for ent_1, (ref, col_1) in self.world.get_components(FuelStrip, Collider):
             #Player's components
             for ent_2, (play, fuel, col_2) in self.world.get_components(Player, Collider):
                 #AABB Collision
@@ -314,7 +348,6 @@ class BulletSystem(esper.Processor):
 class Boat:
     None
 
-
 class Plane:
     None
 
@@ -340,7 +373,7 @@ class Spawner:
         self.jetCount = 0
         self.boatCount = 0
         self.bombCount = 0
-        self.fuelCount = 0
+        self.fuelCount = 2
         self.spawnCount = 5
 
 #TODO: Implement this system.
@@ -353,13 +386,19 @@ class SpawnSystem(esper.Processor):
 
     def spawnEnemies(self):
         s = self.world.component_for_entity(spawner,Spawner)
+        t = self.world.component_for_entity(terrain, Terrain)
         for i in range(s.spawnCount):
-            t = self.world.component_for_entity(terrain,Terrain)
+            #t = self.world.component_for_entity(terrain,Terrain)
             randomX = random.randint(0, t.terrain_width)
             randomY = random.randint(-(t.terrain_height // 2), -1)
             #if boat will not spawn in on land at this random location, then spawn it
             if(not self.CheckForNewChunkLandCollision(Position(randomX,randomY),Collider(BOAT_WIDTH,BOAT_HEIGHT))):
                 self.spawnBoat(randomX, randomY)
+        for i in range(s.fuelCount):
+            randomX = random.randint(0, t.terrain_width)
+            randomY = random.randint(-(t.terrain_height //2), -1)
+            if(not self.CheckForNewChunkLandCollision(Position(randomX, randomY), Collider(FUEL_WIDTH, FUEL_HEIGHT))):
+                self.spawnFuel(randomX, randomY)
 
     #this functions appears to not be working
     def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
@@ -389,10 +428,21 @@ class SpawnSystem(esper.Processor):
     def spawnBoat(self, xpos, ypos):
         world.create_entity(
             Boat(),
+            Type("boat"),
             Position(xpos, ypos),
             Velocity(BOAT_START_VELOCITY_X,BOAT_START_VELOCITY_Y),
             Renderable(pygame.image.load("./Boat2.png")),
             Collider(BOAT_WIDTH,BOAT_HEIGHT)
+        )
+
+    def spawnFuel(self, xpos, ypos):
+        world.create_entity(
+            FuelStrip(),
+            Type("fuel"),
+            Position(xpos, ypos),
+            Velocity(0, 0),
+            Renderable(pygame.image.load("./Fuel.png")),
+            Collider(FUEL_WIDTH, FUEL_HEIGHT)
         )
 
 """ class Bomb:
@@ -514,8 +564,10 @@ class TerrainSystem(esper.Processor):
             self.current_delay = 0
             for _, (pos) in self.world.get_component(Position):
                 pos.y += 1
-            player_pos = self.world.component_for_entity(player,Position)
+            player_pos = self.world.component_for_entity(player, Position)
             player_pos.y -= 1
+            p = self.world.component_for_entity(player, Player)
+            p.defuel() #defuel each time terrain scrolls
 
         if(terrain.scroll_pos == ((terrain.terrain_height // 2) - 1)):
             #print("scroll_pos = " + str(terrain.scroll_pos) + "   ((terrain.terrain_height // 2) - 1) = " + str(((terrain.terrain_height // 2) - 1)))
@@ -622,8 +674,9 @@ world = esper.World()
 #Create the player entity. Has a position, velocity, collider, it can be rendered,
 #and it has special player logic and state.
 player = world.create_entity(
+    Type("player"),
     Position(14, 27),
-    Player(3, 100, 100, 0.5, 0.05),
+    Player(3, 100, 100, 1, 1),
     Velocity(0,0),
     Renderable(pygame.image.load("./plane.png")),
     Collider(1,1)
@@ -631,6 +684,7 @@ player = world.create_entity(
 
 world.create_entity(
     Boat(),
+    Type("boat"),
     Position(3,5),
     Velocity(1,0),
     Renderable(pygame.image.load("./Boat2.png")),
