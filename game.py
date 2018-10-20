@@ -37,6 +37,11 @@ BOAT_HEIGHT = 2
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
 
+JET_WIDTH = 2
+JET_HEIGHT = 2
+JET_START_VELOCITY_X = 0
+JET_START_VELOCITY_Y = 2
+
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -236,8 +241,8 @@ class MovementSystem(esper.Processor):
             self.currentDelay = 0
             self.movePlayer()
             self.moveBoats()
+            self.moveJets()
             #TODO: WRITE OTHER ENEMY MOVEMENT FUNCTIONS
-            #self.moveJets()
             #self.moveHelit()
             #etc.
             
@@ -255,6 +260,11 @@ class MovementSystem(esper.Processor):
                     vel.x = -vel.x #change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False) #flip image
                 pos.x += vel.x #change position based on velocity
+
+    def moveJets(self):
+        for ent, (jet, vel, pos, col, rend) in self.world.get_components(Jet, Velocity, Position, Collider, Renderable):
+            if(pos.y >= 0): #if the jets are on screen 
+                pos.y += vel.y
 
 class Bullet:
     None
@@ -277,6 +287,8 @@ class BulletSystem(esper.Processor):
 class Boat:
     None
 
+class Jet:
+    None
 
 class Plane:
     None
@@ -351,6 +363,15 @@ class SpawnSystem(esper.Processor):
         print("spawnHeli()")
 
     def spawnJet(self, xpos, ypos):
+        if(not self.CheckForNewChunkLandCollision(Position(xpos, ypos),Collider(JET_WIDTH,JET_HEIGHT))):
+            world.create_entity(
+                Enemy(),
+                Jet(),
+                Position(xpos, ypos),
+                Velocity(JET_START_VELOCITY_X,JET_START_VELOCITY_Y),
+                Renderable(pygame.image.load("./jet.png")),
+                Collider(JET_WIDTH,JET_HEIGHT)
+            )
         print("spawnJet()")
 
     def spawnBomb(self, xpos, ypos):
