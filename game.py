@@ -42,9 +42,15 @@ JET_HEIGHT = 2
 JET_START_VELOCITY_X = 0
 JET_START_VELOCITY_Y = 2
 
+FUEL_WIDTH = 1
+FUEL_HEIGHT = 2
+fuelhud = 0
+
 #Number of tiles to move a bullet before despawning it
 #(Effectively, a bullet's range)
 BULLET_LIFESPAN = 30
+
+SHOOT_DEFUEL_PENALTY = 1 #how much the player will be defueled when they shoot
 
 
 
@@ -68,15 +74,17 @@ class Velocity:
 
 #Player-Specific Component
 class Player:
-    def __init__(self, lives=3, fuel=100, max=100, fuel_rate=0.5, defuel_rate=0.05):
+    def __init__(self, lives=3, fuel=100, max=100, fuel_rate=0.5, defuel_rate=1):
         self.lives = lives
         self.fuel = fuel
         self.max = max
         self.fuel_rate = fuel_rate
         self.defuel_rate = defuel_rate
+        self.score = 0
 
     def kill(self):
         self.lives -= 1
+        self.fuel = self.max
         if(self.lives == 0):
             print("GAME OVER") #load title screen etc
         world.get_processor(TerrainSystem).clearTerrain() #clear terrain
@@ -86,6 +94,20 @@ class Player:
         world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain,Terrain)) #re-intialize terrain
         world.component_for_entity(player,Position).x = PLAYER_START_POS_X #change player position
         world.component_for_entity(player,Position).y = PLAYER_START_POS_Y #change player position
+
+    def refuel(self):
+        if self.fuel + self.fuel_rate <= self.max:
+            self.fuel += self.fuel_rate #refuel player at fuel_rate
+        else:
+            self.fuel += self.max - self.fuel #top off player
+
+    
+    def defuel(self):
+        if self.fuel - self.defuel_rate > 0:
+            self.fuel -= self.defuel_rate #deduct the defuel rate
+        else:
+            world.component_for_entity(player,Player).kill() #kill player if out of fuel
+
 
 
 #Render Component
@@ -135,7 +157,17 @@ class RenderSystem(esper.Processor):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
         #And the bullets
         for ent, (bullet, render) in self.world.get_components(Bullet, Renderable):
-            self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+            self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, bullet.y * TILE_HEIGHT))
+        
+        #render the player last so nothing is drawn over it
+        for ent, (p, pos, render) in self.world.get_components(Player, Position, Renderable):
+            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
+        #Display fuel level
+        p = world.component_for_entity(player, Player)
+        myfont = pygame.font.SysFont("Times New Roman", 30)
+        textsurface = myfont.render(str(p.fuel), False, (255, 0, 0))
+        win.blit(textsurface, (0, 0))
 
         pygame.display.flip()
 
@@ -168,6 +200,22 @@ class ColliderSystem(esper.Processor):
         if(self.checkPlayerEnemyCollisions()):
             print("player hit enemy")
             self.world.component_for_entity(player,Player).kill()
+
+        #check for player-fuel collisions
+        if(self.checkPlayerFuelStripCollisions()):
+            print("player refueling")
+            self.world.component_for_entity(player, Player).refuel()
+
+
+    def checkPlayerFuelStripCollisions(self):
+        collisionDetected = False
+        player_pos        = self.world.component_for_entity(player,Position)
+        player_collider   = self.world.component_for_entity(player,Collider)
+        for ent, (_, pos, col) in self.world.get_components(FuelStrip, Position, Collider):
+            if(self.checkCollision(player_pos, player_collider, pos, col)):
+                collisionDetected = True
+                break
+        return collisionDetected
 
     #returns true if the player hits land, otherwise false
     def checkPlayerEnemyCollisions(self):
@@ -214,7 +262,7 @@ class ColliderSystem(esper.Processor):
         return collisionDetected
     
 #Fuelstrip Component
-class Fuelstrip:
+class FuelStrip:
     def __init__(self):
         None
         #Stateless component, essentially functions as a flag.
@@ -308,23 +356,39 @@ class BulletSystem(esper.Processor):
                 bullet.y += bullet.y_vel
                 bullet.time_alive += 1
             
-        for _, bullet in self.world.get_component(Bullet):
+        for bullet_ent, bullet in self.world.get_component(Bullet):
             for ent, (enemy, enemy_position) in self.world.get_components(Enemy, Position):
                 if(bullet.x == enemy_position.x and bullet.y == enemy_position.y):
                     self.world.delete_entity(ent)
+                    itr = self.world.get_component(Player)
+                    itr[0][1].score += 1
+                    print("player score = " + str(itr[0][1].score))
                 #Special collision for boats, as they take up two tiles.
                 if(len(list(self.world.try_component(ent, Boat))) == 1):
                     if(bullet.x - 1 == enemy_position.x and bullet.y == enemy_position.y):
                         self.world.delete_entity(ent)
+                        itr = self.world.get_component(Player)
+                        itr[0][1].score += 1
+                        print("player score = " + str(itr[0][1].score))
+
+            for boat_ent, (fs, pos) in self.world.get_components(FuelStrip, Position):
+                if( (bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y-1) ) ):
+                    self.world.delete_entity(boat_ent)
+
+
+            #check for bullet-land collsions
+            if(self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x,bullet.y),Collider(1,1))):
+                self.world.delete_entity(bullet_ent)
 
         for ent, (player, player_position) in self.world.get_components(Player, Position):
             for _, enemy_bullet in self.world.get_component(EnemyBullet):
                 if(enemy_bullet.x == player_position.x and enemy_bullet.y == player_position.y):
                     player.kill()
 
-
+        
 
     def player_shoot(self, x, y, x_vel, y_vel):
+        self.world.component_for_entity(player,Player).fuel -= SHOOT_DEFUEL_PENALTY
         world.create_entity(
             Bullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./bullet.png"))
@@ -362,10 +426,11 @@ class EnemySystem(esper.Processor):
 class Spawner:
     def __init__(self):
         self.enemy_type_count = 7
-        self.initial_spawn_attempts = 5
+        self.initial_spawn_attempts = 10
         self.chunks_required_to_increase_spawn_attempts = 2 #spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0 #how many times a new chunck has been generated
         self.spawn_attempts = 5
+        self.fuel_strip_spawn_attempts = 10
 
 #TODO: Implement this system.
 #This system is currently not added to the world, and thus is never processed.
@@ -380,6 +445,7 @@ class SpawnSystem(esper.Processor):
         the_spawner.chunk_generation_count += 1
         the_spawner.spawn_attempts = (the_spawner.chunk_generation_count // the_spawner.chunks_required_to_increase_spawn_attempts) + the_spawner.initial_spawn_attempts
 
+        #spawn enemies
         for i in range(the_spawner.spawn_attempts):
             the_terrain = self.world.component_for_entity(terrain,Terrain)
             randomX = random.randint(0, the_terrain.terrain_width)
@@ -402,6 +468,25 @@ class SpawnSystem(esper.Processor):
             elif(randomNumber == 7):
                 self.spawnTurretBoat(randomX, randomY)
 
+        #spawn fuel strips
+        for i in range(the_spawner.fuel_strip_spawn_attempts):
+            the_terrain = self.world.component_for_entity(terrain,Terrain)
+            randomX = random.randint(0, the_terrain.terrain_width)
+            randomY = random.randint(-(the_terrain.terrain_height // 2), -1)
+            self.spawnFuelStrip(randomX, randomY)
+        
+
+
+    def spawnFuelStrip(self, xpos, ypos):
+        if(not self.CheckForNewChunkLandCollision(Position(xpos,ypos),Collider(FUEL_WIDTH,FUEL_HEIGHT))):
+            world.create_entity(
+                FuelStrip(),
+                Position(xpos, ypos),
+                Velocity(0, 0),
+                Renderable(pygame.image.load("./Fuel.png")),
+                Collider(FUEL_WIDTH, FUEL_HEIGHT)
+            )
+
 
     def spawnBoat(self, xpos, ypos):
         #if boat will not spawn on land at this rand x,y position
@@ -416,7 +501,8 @@ class SpawnSystem(esper.Processor):
             )
 
     def spawnHeli(self, xpos, ypos):
-        print("spawnHeli()")
+        #print("spawnHeli()")
+        None
 
     def spawnJet(self, xpos, ypos):
         if(not self.CheckForNewChunkLandCollision(Position(xpos, ypos),Collider(JET_WIDTH,JET_HEIGHT))):
@@ -428,22 +514,24 @@ class SpawnSystem(esper.Processor):
                 Renderable(pygame.image.load("./jet.png")),
                 Collider(JET_WIDTH,JET_HEIGHT)
             )
-        print("spawnJet()")
+        #print("spawnJet()")
 
     def spawnBomb(self, xpos, ypos):
-        print("spawnBomb()")
+        #print("spawnBomb()")
+        None
     
     def spawnEnhancedHeli(self, xpos, ypos):
-        print("spawnEnhancedHeli()")
+        #print("spawnEnhancedHeli()")
+        None
 
     def spawnEnhancedJet(self, xpos, ypos):
-        print("spawnEnhancedJet()")
+        #print("spawnEnhancedJet()")
+        None
 
     def spawnTurretBoat(self, xpos, ypos):
-        print("spawnTurretBoat()")
+        #print("spawnTurretBoat()")
+        None
 
-    def spawnFuelStrips(self):
-        print("spawnFuelStrips()")
 
     #returns true if the an entity will spawn in on land, this checks for OFF-SCREEN LAND COLLISIONS
     def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
@@ -564,10 +652,12 @@ class TerrainSystem(esper.Processor):
             #print(terrain.scroll_pos)
             terrain.scroll_pos -= 1
             self.current_delay = 0
-            for _, (pos) in self.world.get_component(Position):
+            for ent, (pos) in self.world.get_component(Position):
                 pos.y += 1
             player_pos = self.world.component_for_entity(player,Position)
             player_pos.y -= 1
+            p = self.world.component_for_entity(player, Player)
+            p.defuel() #defuel each time terrain scrolls
 
         if(terrain.scroll_pos == ((terrain.terrain_height // 2) - 1)):
             #print("scroll_pos = " + str(terrain.scroll_pos) + "   ((terrain.terrain_height // 2) - 1) = " + str(((terrain.terrain_height // 2) - 1)))
@@ -675,7 +765,7 @@ world = esper.World()
 #and it has special player logic and state.
 player = world.create_entity(
     Position(14, 27),
-    Player(3, 100, 100, 0.5, 0.05),
+    Player(3, 100, 100, 0.5),
     Velocity(0,0),
     Renderable(pygame.image.load("./plane.png")),
     Collider(1,1)
@@ -713,12 +803,12 @@ bullet_system = BulletSystem()
 
 #Adds the systems to the world. The priority argument is optional, higher values are
 #higher priority. Defaults to 0.
-world.add_processor(render_system)
-world.add_processor(bullet_system)
-world.add_processor(collider_system, 1)
-world.add_processor(movement_system, 2)
-world.add_processor(spawn_system, 3)
-world.add_processor(terrain_system, 4)
+world.add_processor(render_system, 1)
+world.add_processor(bullet_system, 2)
+world.add_processor(collider_system, 3)
+world.add_processor(movement_system, 4)
+world.add_processor(spawn_system, 5)
+world.add_processor(terrain_system, 6)
 
 
 
@@ -741,9 +831,9 @@ while run:
                 player_pos = world.component_for_entity(player, Position)
                 bullet_system.player_shoot(
                     player_pos.x,
-                    player_pos.y + 1,
+                    player_pos.y - 1,
                     0,
-                    1
+                    -1
                 )
             if event.key == pygame.K_LEFT:
                 #Move the player left.
