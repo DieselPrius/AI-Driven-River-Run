@@ -42,6 +42,11 @@ JET_HEIGHT = 2
 JET_START_VELOCITY_X = 0
 JET_START_VELOCITY_Y = 2
 
+#Number of tiles to move a bullet before despawning it
+#(Effectively, a bullet's range)
+BULLET_LIFESPAN = 30
+
+
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
@@ -128,6 +133,10 @@ class RenderSystem(esper.Processor):
         #Render the Entities . . .
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+        #And the bullets
+        for ent, (bullet, render) in self.world.get_components(Bullet, Renderable):
+            self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
         pygame.display.flip()
 
 
@@ -267,22 +276,69 @@ class MovementSystem(esper.Processor):
                 pos.y += vel.y
 
 class Bullet:
-    None
+    def __init__(self, x, y, x_vel, y_vel, lifespan = BULLET_LIFESPAN):
+        self.x = x
+        self.y = y
+        self.lifespan = lifespan
+        self.time_alive = 0
+        self.x_vel = x_vel
+        self.y_vel = y_vel
 
-class Enemy:
-    None
 
-#Collision System
+class EnemyBullet:
+    def __init__(self, x, y, x_vel, y_vel, lifespan = BULLET_LIFESPAN):
+        self.x = x
+        self.y = y
+        self.lifespan = lifespan
+        self.time_alive = 0
+        self.x_vel = x_vel
+        self.y_vel = y_vel
+
+
 class BulletSystem(esper.Processor):
     def __init__(self):
         super().__init__()
-    def process(self):
-        for ent_1, (pos_1, lives, col_1) in self.world.get_components(Player, Collider):
-            for ent_2, (pos_2, col_2) in self.world.get_components(Bullet, Collider):
-                if ent_1 != ent_2:
-                    #TODO: Bullet Collision
-                    pass
 
+    def process(self):
+        for ent, bullet in self.world.get_component(Bullet):
+            if(bullet.time_alive >= bullet.lifespan):
+                self.world.delete_entity(ent)
+            else:
+                bullet.x += bullet.x_vel
+                bullet.y += bullet.y_vel
+                bullet.time_alive += 1
+            
+        for _, bullet in self.world.get_component(Bullet):
+            for ent, (enemy, enemy_position) in self.world.get_components(Enemy, Position):
+                if(bullet.x == enemy_position.x and bullet.y == enemy_position.y):
+                    self.world.delete_entity(ent)
+                #Special collision for boats, as they take up two tiles.
+                if(len(list(self.world.try_component(ent, Boat))) == 1):
+                    if(bullet.x - 1 == enemy_position.x and bullet.y == enemy_position.y):
+                        self.world.delete_entity(ent)
+
+        for ent, (player, player_position) in self.world.get_components(Player, Position):
+            for _, enemy_bullet in self.world.get_component(EnemyBullet):
+                if(enemy_bullet.x == player_position.x and enemy_bullet.y == player_position.y):
+                    player.kill()
+
+
+
+    def player_shoot(self, x, y, x_vel, y_vel):
+        world.create_entity(
+            Bullet(x, y, x_vel, y_vel),
+            Renderable(pygame.image.load("./bullet.png"))
+            )
+
+    def enemy_shoot(self, x, y, x_vel, y_vel):
+        world.create_entity(
+            EnemyBullet(x, y, x_vel, y_vel),
+            Renderable(pygame.image.load("./enemy_bullet.png"))
+            )
+
+
+class Enemy:
+    None
 
 class Boat:
     None
@@ -407,23 +463,6 @@ class SpawnSystem(esper.Processor):
         return collisionDetected
 
     
-
-""" class Bomb:
-    def __init__(self, width = BOMB_WIDTH, height = BOMB_HEIGHT):
-        self.width = width
-        self.height = height
-
-class BombSystem:
-    def __init__(self):
-        super().__init__()
-    def process(self):
-        for ent, (bomb, col_1) in self.world.get_components(Bomb, Collider):
-            for ent, (player, col_2) in self.world.get_components(Player, Collider):
-                if (col_1.rect.contains(col_2.rect)):
-                    print("Collision!") """
-    
-
-
 class Terrain:
     def __init__(self,
         scroll_delay = TERRAIN_SCROLL_DELAY,
@@ -670,10 +709,12 @@ collider_system = ColliderSystem()
 movement_system = MovementSystem()
 terrain_system = TerrainSystem()
 spawn_system = SpawnSystem()
+bullet_system = BulletSystem()
 
 #Adds the systems to the world. The priority argument is optional, higher values are
 #higher priority. Defaults to 0.
 world.add_processor(render_system)
+world.add_processor(bullet_system)
 world.add_processor(collider_system, 1)
 world.add_processor(movement_system, 2)
 world.add_processor(spawn_system, 3)
@@ -697,8 +738,13 @@ while run:
             run = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                pass
-                #TODO: Fire Bullet
+                player_pos = world.component_for_entity(player, Position)
+                bullet_system.player_shoot(
+                    player_pos.x,
+                    player_pos.y + 1,
+                    0,
+                    1
+                )
             if event.key == pygame.K_LEFT:
                 #Move the player left.
                 if(world.component_for_entity(player,Position).x - 1 >= 0):
@@ -721,4 +767,3 @@ while run:
 
 #If we're no longer running, quit() pygame to free its resources.
 pygame.quit()
-
