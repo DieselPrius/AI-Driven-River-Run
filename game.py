@@ -365,11 +365,17 @@ class BulletSystem(esper.Processor):
                     print("player score = " + str(itr[0][1].score))
                 #Special collision for boats, as they take up two tiles.
                 if(len(list(self.world.try_component(ent, Boat))) == 1):
-                    if(bullet.x - 1 == enemy_position.x and bullet.y == enemy_position.y):
-                        self.world.delete_entity(ent)
-                        itr = self.world.get_component(Player)
-                        itr[0][1].score += 1
-                        print("player score = " + str(itr[0][1].score))
+                    for i in range(0,BOAT_WIDTH): #0,1,2
+                        if(bullet.x == enemy_position.x + i and (bullet.y == enemy_position.y or bullet.y == enemy_position.y + 1)):
+                            self.world.delete_entity(ent)
+                            itr = self.world.get_component(Player)
+                            itr[0][1].score += 1
+                            print("player score = " + str(itr[0][1].score))
+                    # if(bullet.x - 1 == enemy_position.x and bullet.y == enemy_position.y):
+                    #     self.world.delete_entity(ent)
+                    #     itr = self.world.get_component(Player)
+                    #     itr[0][1].score += 1
+                    #     print("player score = " + str(itr[0][1].score))
 
             for boat_ent, (fs, pos) in self.world.get_components(FuelStrip, Position):
                 if( (bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y-1) ) ):
@@ -426,7 +432,7 @@ class EnemySystem(esper.Processor):
 class Spawner:
     def __init__(self):
         self.enemy_type_count = 7
-        self.initial_spawn_attempts = 10
+        self.initial_spawn_attempts = 20
         self.chunks_required_to_increase_spawn_attempts = 2 #spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0 #how many times a new chunck has been generated
         self.spawn_attempts = 5
