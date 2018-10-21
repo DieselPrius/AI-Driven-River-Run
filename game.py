@@ -37,9 +37,15 @@ BOAT_HEIGHT = 2
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
 
+JET_WIDTH = 2
+JET_HEIGHT = 2
+JET_START_VELOCITY_X = 0
+JET_START_VELOCITY_Y = 2
+
 #Number of tiles to move a bullet before despawning it
 #(Effectively, a bullet's range)
 BULLET_LIFESPAN = 30
+
 
 
 win = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
@@ -127,12 +133,12 @@ class RenderSystem(esper.Processor):
         #Render the Entities . . .
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
-
         #And the bullets
         for ent, (bullet, render) in self.world.get_components(Bullet, Renderable):
             self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
         pygame.display.flip()
+
 
 #Collision Component
 class Collider:
@@ -244,8 +250,8 @@ class MovementSystem(esper.Processor):
             self.currentDelay = 0
             self.movePlayer()
             self.moveBoats()
+            self.moveJets()
             #TODO: WRITE OTHER ENEMY MOVEMENT FUNCTIONS
-            #self.moveJets()
             #self.moveHelit()
             #etc.
             
@@ -264,15 +270,10 @@ class MovementSystem(esper.Processor):
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False) #flip image
                 pos.x += vel.x #change position based on velocity
 
-class Direction(Enum):
-    North = 0
-    Northeast = 1
-    East = 2
-    Southeast = 3
-    South = 4
-    Southwest = 5
-    West = 6
-    Northwest = 7
+    def moveJets(self):
+        for ent, (jet, vel, pos, col, rend) in self.world.get_components(Jet, Velocity, Position, Collider, Renderable):
+            if(pos.y >= 0): #if the jets are on screen 
+                pos.y += vel.y
 
 class Bullet:
     def __init__(self, x, y, x_vel, y_vel, lifespan = BULLET_LIFESPAN):
@@ -283,6 +284,7 @@ class Bullet:
         self.x_vel = x_vel
         self.y_vel = y_vel
 
+
 class EnemyBullet:
     def __init__(self, x, y, x_vel, y_vel, lifespan = BULLET_LIFESPAN):
         self.x = x
@@ -291,6 +293,7 @@ class EnemyBullet:
         self.time_alive = 0
         self.x_vel = x_vel
         self.y_vel = y_vel
+
 
 class BulletSystem(esper.Processor):
     def __init__(self):
@@ -337,10 +340,11 @@ class BulletSystem(esper.Processor):
 class Enemy:
     None
 
-
 class Boat:
     None
 
+class Jet:
+    None
 
 class Plane:
     None
@@ -362,8 +366,9 @@ class Spawner:
         self.chunks_required_to_increase_spawn_attempts = 2 #spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0 #how many times a new chunck has been generated
         self.spawn_attempts = 5
-        
 
+#TODO: Implement this system.
+#This system is currently not added to the world, and thus is never processed.
 class SpawnSystem(esper.Processor):
     def __init__(self):
         super().__init__()
@@ -414,6 +419,15 @@ class SpawnSystem(esper.Processor):
         print("spawnHeli()")
 
     def spawnJet(self, xpos, ypos):
+        if(not self.CheckForNewChunkLandCollision(Position(xpos, ypos),Collider(JET_WIDTH,JET_HEIGHT))):
+            world.create_entity(
+                Enemy(),
+                Jet(),
+                Position(xpos, ypos),
+                Velocity(JET_START_VELOCITY_X,JET_START_VELOCITY_Y),
+                Renderable(pygame.image.load("./jet.png")),
+                Collider(JET_WIDTH,JET_HEIGHT)
+            )
         print("spawnJet()")
 
     def spawnBomb(self, xpos, ypos):
@@ -449,23 +463,6 @@ class SpawnSystem(esper.Processor):
         return collisionDetected
 
     
-
-""" class Bomb:
-    def __init__(self, width = BOMB_WIDTH, height = BOMB_HEIGHT):
-        self.width = width
-        self.height = height
-
-class BombSystem:
-    def __init__(self):
-        super().__init__()
-    def process(self):
-        for ent, (bomb, col_1) in self.world.get_components(Bomb, Collider):
-            for ent, (player, col_2) in self.world.get_components(Player, Collider):
-                if (col_1.rect.contains(col_2.rect)):
-                    print("Collision!") """
-    
-
-
 class Terrain:
     def __init__(self,
         scroll_delay = TERRAIN_SCROLL_DELAY,
@@ -530,7 +527,7 @@ class TerrainSystem(esper.Processor):
     #Populates terrain with land on sides of screen
     def generate_initial_terrain(self, terrain):
         for y in range(terrain.terrain_height //2 ,terrain.terrain_height):
-            for x in range(0, min(3, terrain.terrain_width)):
+            for x in range(0, 3):
                 terrain.tile_matrix[x][y].tile_type = Tiles.LAND
             for x in range(terrain.terrain_width -3, terrain.terrain_width):
                 terrain.tile_matrix[x][y].tile_type = Tiles.LAND
@@ -770,4 +767,3 @@ while run:
 
 #If we're no longer running, quit() pygame to free its resources.
 pygame.quit()
-
