@@ -32,8 +32,8 @@ TERRAIN_SCROLL_DELAY = 30
 PLAYER_START_POS_X = 14
 PLAYER_START_POS_Y = 29
 
-BOAT_WIDTH = 3
-BOAT_HEIGHT = 2
+BOAT_WIDTH = 2
+BOAT_HEIGHT = 1
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
 
@@ -178,22 +178,32 @@ class RenderSystem(esper.Processor):
         for ent, (p, pos, render) in self.world.get_components(Player, Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
+
+        for i in range(COLUMNS):
+            pygame.draw.rect(win,(131, 135, 142),(i*TILE_WIDTH,(ROWS-1)*TILE_WIDTH,TILE_WIDTH,TILE_HEIGHT))
+
+
+        text_color = (221, 185, 75)
+
         # Display fuel level
         p = world.component_for_entity(player, Player)
         myfont = pygame.font.SysFont("Times New Roman", 30)
         #textsurface = myfont.render(str(p.fuel), False, (255, 0, 0))
         scorefont = pygame.font.SysFont("Times New Roman", 25)
         scorefont.set_bold(1)
-        score = "SCORE: " + str(p.score)
-        scoretext = scorefont.render(score, True, (255, 0, 0))
+        score = str(p.score)
+        scoretext = scorefont.render(score, True, text_color)
         #win.blit(textsurface, (0, 0))
-        win.blit(scoretext, (250, 1))
+        win.blit(scoretext, (570, 870))
 
-        lives = "LIVES: " + str(p.lives)
+
+        #display lives
+        lives = str(p.lives)
         livesfont = pygame.font.SysFont("Times New Roman", 25)
         livesfont.set_bold(1)
-        livestext = livesfont.render(lives, True, (250, 0, 0))
-        win.blit(livestext, (400,1))
+        livestext = livesfont.render(lives, True, text_color)
+        win.blit(livestext, (320,870))
+
 
         # drawing HUD
         font = pygame.font.SysFont('timesnewroman', 15)
@@ -202,10 +212,10 @@ class RenderSystem(esper.Processor):
         empty = font.render(text[0], True, BLACK)
         divide = font.render(text[1], True, BLACK)
         full = font.render(text[2], True, BLACK)
-        xstart = 5
-        ystart = 3
-        fuel_full = 230
-        fuel_empt = 60
+        xstart = 400 #5
+        ystart = 873 #3
+        fuel_full = 535 #230
+        fuel_empt = 365 #60
         # assume fuel_start = 100
         location = fuel_full - (100 - p.fuel) * (fuel_full - fuel_empt) / 100
         # original box
@@ -422,8 +432,8 @@ class BulletSystem(esper.Processor):
                     print("player score = " + str(itr[0][1].score))
                 # Special collision for boats, as they take up two tiles.
                 if (len(list(self.world.try_component(ent, Boat))) == 1):
-                    for i in range(0, BOAT_WIDTH):  # 0,1,2
-                        if (bullet.x == enemy_position.x + i and (bullet.y == enemy_position.y or bullet.y == enemy_position.y + 1)):
+                    for i in range(0, BOAT_WIDTH):  # 0,1
+                        if (bullet.x == enemy_position.x + i and bullet.y == enemy_position.y):
                             self.world.delete_entity(ent)
                             self.world.delete_entity(bullet_ent)
                             itr = self.world.get_component(Player)
@@ -559,7 +569,7 @@ class SpawnSystem(esper.Processor):
                 Boat(),  # usefull for the moveBoat function
                 Position(xpos, (-ROWS + ypos)),
                 Velocity(BOAT_START_VELOCITY_X, BOAT_START_VELOCITY_Y),
-                Renderable(pygame.image.load("./images/Boat2.png")),
+                Renderable(pygame.image.load("./images/boat3.png")),
                 Collider(BOAT_WIDTH, BOAT_HEIGHT)
             )
 
@@ -860,7 +870,7 @@ world.create_entity(
     Boat(),
     Position(3, 5),
     Velocity(1, 0),
-    Renderable(pygame.image.load("./images/Boat2.png")),
+    Renderable(pygame.image.load("./images/boat.png")),
     Collider(3, 2)
 )
 
@@ -928,7 +938,7 @@ while run:
                     world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
             if event.key == pygame.K_DOWN:
                 # Move the player down.
-                if (world.component_for_entity(player, Position).y + 1 < ROWS):
+                if (world.component_for_entity(player, Position).y + 1 < (ROWS - 1)):
                     world.component_for_entity(player, Velocity).y = PLAYER_SPEED
     world.process()
     # Pauses the thread if the frame was quick to process, effectively limiting the framerate.
