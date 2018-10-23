@@ -42,6 +42,10 @@ JET_HEIGHT = 1
 JET_START_VELOCITY_X = 0
 JET_START_VELOCITY_Y = 2
 
+
+BRIDGE_WIDTH = 30
+BRIDGE_HEIGHT = 2
+
 FUEL_WIDTH = 1
 FUEL_HEIGHT = 2
 fuelhud = 0
@@ -162,6 +166,10 @@ class RenderSystem(esper.Processor):
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
         
+        #render bridge on top of enemies to make it appear as if the enemies are under the bridge
+        for ent, (pos, render, br) in self.world.get_components(Position, Renderable, Bridge):
+            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
         #render fuel stips
         for ent, (pos, render, fs) in self.world.get_components(Position, Renderable, FuelStrip):
              self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
@@ -240,6 +248,8 @@ class RenderSystem(esper.Processor):
 class Collider:
     # width and height are in tiles, not pixels
     def __init__(self, width=1, height=1):
+        self.t_width = width
+        self.t_height = height
         self.width = width * TILE_WIDTH
         self.height = height * TILE_HEIGHT
         # self.collider_class = collider_class
@@ -257,17 +267,17 @@ class ColliderSystem(esper.Processor):
         # check for player-land collisions
         if (self.checkForLandCollision(world.component_for_entity(player, Position),
                                        world.component_for_entity(player, Collider))):
-            print("player hit land")
+            #print("player hit land")
             self.world.component_for_entity(player, Player).kill()
 
         # check for player-enemy collisions
         if (self.checkPlayerEnemyCollisions()):
-            print("player hit enemy")
+            #print("player hit enemy")
             self.world.component_for_entity(player, Player).kill()
 
         # check for player-fuel collisions
         if (self.checkPlayerFuelStripCollisions()):
-            print("player refueling")
+            #print("player refueling")
             self.world.component_for_entity(player, Player).refuel()
 
     def checkPlayerFuelStripCollisions(self):
@@ -423,26 +433,18 @@ class BulletSystem(esper.Processor):
                 bullet.time_alive += 1
 
         for bullet_ent, bullet in self.world.get_component(Bullet):
-            for ent, (enemy, enemy_position) in self.world.get_components(Enemy, Position):
-                if (bullet.x == enemy_position.x and bullet.y == enemy_position.y):
-                    self.world.delete_entity(ent)
+            #check for bullet enemy collisions
+            for enemy_ent, (enemy, enemy_position, enemy_collider) in self.world.get_components(Enemy, Position, Collider):
+                if( (bullet.x >= enemy_position.x and bullet.x < enemy_position.x + enemy_collider.t_width) and (bullet.y >= enemy_position.y and bullet.y < enemy_position.y + enemy_collider.t_height)):
+                    self.world.delete_entity(enemy_ent)
                     self.world.delete_entity(bullet_ent)
                     itr = self.world.get_component(Player)
                     itr[0][1].score += 10
-                    print("player score = " + str(itr[0][1].score))
-                # Special collision for boats, as they take up two tiles.
-                if (len(list(self.world.try_component(ent, Boat))) == 1):
-                    for i in range(0, BOAT_WIDTH):  # 0,1
-                        if (bullet.x == enemy_position.x + i and bullet.y == enemy_position.y):
-                            self.world.delete_entity(ent)
-                            self.world.delete_entity(bullet_ent)
-                            itr = self.world.get_component(Player)
-                            itr[0][1].score += 10
-                            print("player score = " + str(itr[0][1].score))
 
-            for boat_ent, (fs, pos) in self.world.get_components(FuelStrip, Position):
+            # check for bullet-fuel strip collisions
+            for fuel_ent, (fs, pos) in self.world.get_components(FuelStrip, Position):
                 if ((bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y - 1))):
-                    self.world.delete_entity(boat_ent)
+                    self.world.delete_entity(fuel_ent)
                     self.world.delete_entity(bullet_ent)
 
             # check for bullet-land collsions
@@ -481,6 +483,9 @@ class Jet:
 
 
 class Plane:
+    None
+
+class Bridge:
     None
 
 
@@ -548,6 +553,21 @@ class SpawnSystem(esper.Processor):
             randomX = random.randint(0, the_terrain.terrain_width)
             randomY = random.randint(0, the_terrain.terrain_width)
             self.spawnFuelStrip(randomX, randomY)
+
+        # spawn bridges
+        randomNum = random.randint(0,3)
+        if(randomNum == 0):
+            print("   spawnbridge")
+            self.spawnBridge()
+
+    def spawnBridge(self):
+        world.create_entity(
+                Enemy(),
+                Bridge(),
+                Position(0, -30),
+                Renderable(pygame.image.load("./images/bridge.png")),
+                Collider(BRIDGE_WIDTH, BRIDGE_HEIGHT)
+            )
 
     def spawnFuelStrip(self, xpos, ypos):
         #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(FUEL_WIDTH, FUEL_HEIGHT))):
@@ -872,6 +892,32 @@ world.create_entity(
     Velocity(1, 0),
     Renderable(pygame.image.load("./images/boat.png")),
     Collider(3, 2)
+)
+
+world.create_entity(
+    Enemy(),
+    Boat(),
+    Position(4, 10),
+    Velocity(1, 0),
+    Renderable(pygame.image.load("./images/boat.png")),
+    Collider(3, 2)
+)
+
+world.create_entity(
+    Enemy(),
+    Boat(),
+    Position(5, 15),
+    Velocity(1, 0),
+    Renderable(pygame.image.load("./images/boat.png")),
+    Collider(3, 2)
+)
+
+world.create_entity(
+    Enemy(),
+    Bridge(),
+    Position(0, 0),
+    Renderable(pygame.image.load("./images/bridge.png")),
+    Collider(BRIDGE_WIDTH, BRIDGE_HEIGHT)
 )
 
 # Create the terrain entity. Simply has Terrain component.
