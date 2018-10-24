@@ -30,24 +30,24 @@ BOMB_HEIGHT = 30
 # Frames to wait between scrolls, in frames
 TERRAIN_SCROLL_DELAY = 30
 PLAYER_START_POS_X = 14
-PLAYER_START_POS_Y = 29
+PLAYER_START_POS_Y = 27
 
 BOAT_WIDTH = 2
 BOAT_HEIGHT = 1
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
-
 JET_WIDTH = 1
 JET_HEIGHT = 1
 JET_START_VELOCITY_X = 0
-JET_START_VELOCITY_Y = 2
-
-
+JET_START_VELOCITY_Y = 1
 BRIDGE_WIDTH = 30
 BRIDGE_HEIGHT = 2
-
 FUEL_WIDTH = 1
 FUEL_HEIGHT = 2
+HELI_WIDTH = 1
+HELI_HEIGHT = 1
+HELI_START_VELOCITY_X = 1
+HELI_START_VELOCITY_Y = 0
 fuelhud = 0
 
 BLACK = (0, 0, 0)
@@ -101,8 +101,7 @@ class Player:
         for ent, _ in world.get_component(Position):  # clear all enemy entities
             if (ent != player):  # dont delete player
                 world.delete_entity(ent, True)  # clear all enemy entities
-        world.get_processor(TerrainSystem).generate_initial_terrain(
-            world.component_for_entity(terrain, Terrain))  # re-intialize terrain
+        world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain, Terrain))  # re-intialize terrain
         world.component_for_entity(player, Position).x = PLAYER_START_POS_X  # change player position
         world.component_for_entity(player, Position).y = PLAYER_START_POS_Y  # change player position
 
@@ -147,7 +146,7 @@ class RenderSystem(esper.Processor):
                     if (terrain.tile_matrix[x][y].tile_type == Tiles.LAND):
                         # Land is GREEN
                         pygame.draw.rect(self.window,
-                                         (0, 255, 0),
+                                         terrain.tile_matrix[x][y].color,
                                          (x * TILE_WIDTH,
                                           row * TILE_HEIGHT,
                                           TILE_WIDTH,
@@ -155,7 +154,7 @@ class RenderSystem(esper.Processor):
                     elif (terrain.tile_matrix[x][y].tile_type == Tiles.WATER):
                         # Water is WET, err I mean BLUE
                         pygame.draw.rect(self.window,
-                                         (0, 0, 255),
+                                         terrain.tile_matrix[x][y].color,
                                          (x * TILE_WIDTH,
                                           row * TILE_HEIGHT,
                                           TILE_WIDTH,
@@ -166,10 +165,6 @@ class RenderSystem(esper.Processor):
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
         
-        #render bridge on top of enemies to make it appear as if the enemies are under the bridge
-        for ent, (pos, render, br) in self.world.get_components(Position, Renderable, Bridge):
-            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
-
         #render fuel stips
         for ent, (pos, render, fs) in self.world.get_components(Position, Renderable, FuelStrip):
              self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
@@ -178,8 +173,15 @@ class RenderSystem(esper.Processor):
         for ent, (pos, render, ec) in self.world.get_components(Position, Renderable, Enemy):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
+        #render bridge on top of enemies to make it appear as if the enemies are under the bridge
+        for ent, (pos, render, br) in self.world.get_components(Position, Renderable, Bridge):
+            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
         # And the bullets
         for ent, (bullet, render) in self.world.get_components(Bullet, Renderable):
+            self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, bullet.y * TILE_HEIGHT))
+
+        for ent, (bullet, render) in self.world.get_components(EnemyBullet, Renderable):
             self.window.blit(render.sprite, (bullet.x * TILE_WIDTH, bullet.y * TILE_HEIGHT))
 
         # render the player last so nothing is drawn over it
@@ -372,9 +374,7 @@ class MovementSystem(esper.Processor):
             self.movePlayer()
             self.moveBoats()
             self.moveJets()
-            # TODO: WRITE OTHER ENEMY MOVEMENT FUNCTIONS
-            # self.moveHelit()
-            # etc.
+            self.moveHelicopters()
 
     def movePlayer(self):
         for ent, (p, vel, pos) in self.world.get_components(Player, Velocity, Position):
@@ -384,11 +384,17 @@ class MovementSystem(esper.Processor):
             vel.y = 0
 
     def moveBoats(self):
-        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider,
-                                                                          Renderable):
+        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
             if (pos.y >= 0):  # don't move boats left/right until they are on screen
-                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y),
-                                                                                   col)):  # if boat will hit land at its next location
+                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)):  # if boat will hit land at its next location
+                    vel.x = -vel.x  # change direction
+                    rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
+                pos.x += vel.x  # change position based on velocity
+
+    def moveHelicopters(self):
+        for ent, (heli, vel, pos, col, rend) in self.world.get_components(Helicopter, Velocity, Position, Collider, Renderable):
+            if (pos.y >= 0):  # don't move heli left/right until they are on screen
+                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)):  # if heli will hit land at its next location
                     vel.x = -vel.x  # change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
                 pos.x += vel.x  # change position based on velocity
@@ -420,6 +426,9 @@ class EnemyBullet:
 
 
 class BulletSystem(esper.Processor):
+    enemy_bullet_movement_delay = TERRAIN_SCROLL_DELAY
+    delay_counter = 0
+
     def __init__(self):
         super().__init__()
 
@@ -431,6 +440,25 @@ class BulletSystem(esper.Processor):
                 bullet.x += bullet.x_vel
                 bullet.y += bullet.y_vel
                 bullet.time_alive += 1
+
+        for ent, enemy_bullet in self.world.get_component(EnemyBullet):    
+            if (enemy_bullet.time_alive >= enemy_bullet.lifespan):
+                self.world.delete_entity(ent)
+            else:
+                restDelay = True
+                enemy_bullet.x += enemy_bullet.x_vel
+                enemy_bullet.y += enemy_bullet.y_vel
+                enemy_bullet.time_alive += 1
+
+
+        for ent, (heli_comp, pos) in self.world.get_components(Helicopter, Position):
+            heli_comp.shoot_counter += 1
+            if(heli_comp.shoot_counter >= heli_comp.shoot_delay):
+                self.enemy_shoot(pos.x, pos.y-1, 0, -1)
+                self.enemy_shoot(pos.x+1, pos.y, 1, 0)
+                self.enemy_shoot(pos.x, pos.y+1, 0, 1)
+                self.enemy_shoot(pos.x-1, pos.y, -1, 0)
+                heli_comp.shoot_counter = 0
 
         for bullet_ent, bullet in self.world.get_component(Bullet):
             #check for bullet enemy collisions
@@ -451,6 +479,7 @@ class BulletSystem(esper.Processor):
             if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y), Collider(1, 1))):
                 self.world.delete_entity(bullet_ent)
 
+        # check for player-enemy_bullet collisions
         for ent, (player, player_position) in self.world.get_components(Player, Position):
             for _, enemy_bullet in self.world.get_component(EnemyBullet):
                 if (enemy_bullet.x == player_position.x and enemy_bullet.y == player_position.y):
@@ -464,6 +493,7 @@ class BulletSystem(esper.Processor):
         )
 
     def enemy_shoot(self, x, y, x_vel, y_vel):
+        print("enemy_shoot()")
         world.create_entity(
             EnemyBullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./images/enemy_bullet.png"))
@@ -473,14 +503,16 @@ class BulletSystem(esper.Processor):
 class Enemy:
     None
 
+class Helicopter:
+    def __init__(self, x):
+        self.shoot_delay = x * TERRAIN_SCROLL_DELAY 
+        self.shoot_counter = 0
 
 class Boat:
     None
 
-
 class Jet:
     None
-
 
 class Plane:
     None
@@ -501,8 +533,8 @@ class EnemySystem(esper.Processor):
 # class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
     def __init__(self):
-        self.enemy_type_count = 7
-        self.initial_spawn_attempts = 30
+        self.enemy_type_count = 3
+        self.initial_spawn_attempts = 10
         self.chunks_required_to_increase_spawn_attempts = 2  # spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0  # how many times a new chunck has been generated
         self.spawn_attempts = 5
@@ -538,14 +570,7 @@ class SpawnSystem(esper.Processor):
                 self.spawnHeli(randomX, randomY)
             elif (randomNumber == 3):
                 self.spawnJet(randomX, randomY)
-            elif (randomNumber == 4):
-                self.spawnBomb(randomX, randomY)
-            elif (randomNumber == 5):
-                self.spawnEnhancedHeli(randomX, randomY)
-            elif (randomNumber == 6):
-                self.spawnEnhancedJet(randomX, randomY)
-            elif (randomNumber == 7):
-                self.spawnTurretBoat(randomX, randomY)
+            
 
         # spawn fuel strips
         for i in range(the_spawner.fuel_strip_spawn_attempts):
@@ -560,14 +585,15 @@ class SpawnSystem(esper.Processor):
             print("   spawnbridge")
             self.spawnBridge()
 
+
     def spawnBridge(self):
         world.create_entity(
-                Enemy(),
-                Bridge(),
-                Position(0, -30),
-                Renderable(pygame.image.load("./images/bridge.png")),
-                Collider(BRIDGE_WIDTH, BRIDGE_HEIGHT)
-            )
+            Enemy(),
+            Bridge(),
+            Position(0, -30),
+            Renderable(pygame.image.load("./images/bridge.png")),
+            Collider(BRIDGE_WIDTH, BRIDGE_HEIGHT)
+        )
 
     def spawnFuelStrip(self, xpos, ypos):
         #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(FUEL_WIDTH, FUEL_HEIGHT))):
@@ -594,21 +620,27 @@ class SpawnSystem(esper.Processor):
             )
 
     def spawnHeli(self, xpos, ypos):
-        # print("spawnHeli()")
-        None
+        if (not self.CheckForNewChunkLandCollision(xpos, ypos, BOAT_WIDTH, BOAT_HEIGHT)):
+            world.create_entity(
+                Enemy(),  # all enemies must have this component for enemy-player collisions to work
+                Helicopter(random.randint(5,10)),  # usefull for the moveBoat function
+                Position(xpos, (-ROWS + ypos)),
+                Velocity(HELI_START_VELOCITY_X, HELI_START_VELOCITY_Y),
+                Renderable(pygame.image.load("./images/heli2.png")),
+                Collider(HELI_WIDTH, HELI_HEIGHT)
+            )
+        #self.spawnBoat(xpos,ypos)
 
     def spawnJet(self, xpos, ypos):
-        #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(JET_WIDTH, JET_HEIGHT))):
-        if(not self.CheckForNewChunkLandCollision(xpos, ypos, JET_WIDTH, JET_HEIGHT)):
-            world.create_entity(
-                Enemy(),
-                Jet(),
-                Position(xpos, (-ROWS + ypos)),
-                Velocity(JET_START_VELOCITY_X, JET_START_VELOCITY_Y),
-                Renderable(pygame.image.load("./images/jet.png")),
-                Collider(JET_WIDTH, JET_HEIGHT)
-            )
-            # print("spawnJet()")
+        world.create_entity(
+            Enemy(),
+            Jet(),
+            Position(xpos, (-ROWS + ypos)),
+            Velocity(JET_START_VELOCITY_X, JET_START_VELOCITY_Y),
+            Renderable(pygame.image.load("./images/jet.png")),
+            Collider(JET_WIDTH, JET_HEIGHT)
+        )
+        # print("spawnJet()")
 
     def spawnBomb(self, xpos, ypos):
         # print("spawnBomb()")
@@ -688,8 +720,21 @@ class Tiles(Enum):
 
 
 class TerrainTile:
+    lower_bound_land = 200
+    upper_bound_land = 220
+
+    lower_bound_water = 240
+    upper_bound_water = 250
+
     def __init__(self, tile_type):
+        self.set_tile_type(tile_type)
+
+    def set_tile_type(self, tile_type):
         self.tile_type = tile_type
+        if(tile_type == Tiles.WATER):
+            self.color = (0,0,random.randint(self.lower_bound_water,self.upper_bound_water))
+        else:
+            self.color = (0,random.randint(self.lower_bound_land,self.upper_bound_land),0)
 
 
 class TerrainSystem(esper.Processor):
@@ -727,16 +772,16 @@ class TerrainSystem(esper.Processor):
     def generate_initial_terrain(self, terrain):
         for y in range(terrain.terrain_height // 2, terrain.terrain_height):
             for x in range(0, 3):
-                terrain.tile_matrix[x][y].tile_type = Tiles.LAND
+                terrain.tile_matrix[x][y].set_tile_type(Tiles.LAND)
             for x in range(terrain.terrain_width - 3, terrain.terrain_width):
-                terrain.tile_matrix[x][y].tile_type = Tiles.LAND
+                terrain.tile_matrix[x][y].set_tile_type(Tiles.LAND)
         self.generate_chunk(terrain, self.generate_noise())
 
     def clearTerrain(self):
         for _, (terrain) in self.world.get_component(Terrain):
             for x in range(COLUMNS):
                 for y in range(terrain.terrain_height):
-                    terrain.tile_matrix[x][y].tile_type = Tiles.WATER
+                    terrain.tile_matrix[x][y].set_tile_type(Tiles.WATER)
             terrain.scroll_pos = terrain.terrain_height - 1
 
     # TODO: Fix
@@ -744,7 +789,7 @@ class TerrainSystem(esper.Processor):
     # Have somewhere to be
     def carve(self, row, terrain):
         for i in range(-3, 4):  # carve a six wide path
-            terrain.tile_matrix[self.carving_center + i][row].tile_type = Tiles.WATER
+            terrain.tile_matrix[self.carving_center + i][row].set_tile_type(Tiles.WATER)
 
         self.carving_center += random.randint(-1, 1)
         if (self.carving_center >= (terrain.terrain_width - 4)):
@@ -772,8 +817,7 @@ class TerrainSystem(esper.Processor):
             # copy upper terrain down
             for x in range(terrain.terrain_width):
                 for y in range(terrain.terrain_height // 2):  # 0 to 29
-                    terrain.tile_matrix[x][y + (terrain.terrain_height // 2)].tile_type = terrain.tile_matrix[x][
-                        y].tile_type
+                    terrain.tile_matrix[x][y + (terrain.terrain_height // 2)].set_tile_type(terrain.tile_matrix[x][y].tile_type)
 
             # load new chunck into upper terrain
             self.generate_chunk(terrain, self.generate_noise())
@@ -784,7 +828,7 @@ class TerrainSystem(esper.Processor):
     def generate_chunk(self, terrain, noise_map):
         for x in range(0, terrain.terrain_height // 2):  # 0 to 29
             for y in range(0, terrain.terrain_width):  # 0 to 29
-                terrain.tile_matrix[x][y].tile_type = noise_map[y][x]
+                terrain.tile_matrix[x][y].set_tile_type(noise_map[y][x])
         for y in range((terrain.terrain_height // 2) - 1, -1, -1):  # 29 to 0
             self.carve(y, terrain)
 
@@ -852,8 +896,7 @@ class TerrainSystem(esper.Processor):
                 elif (
                         neighbor_y < 0 or neighbor_y >= ROWS):  # if cell has no right/left neighbors, count them as living
                     count += 1
-                elif (noise_map[neighbor_x][
-                          neighbor_y] == Tiles.LAND):  # if neighbor is alive, increase living neighbor count
+                elif (noise_map[neighbor_x][neighbor_y] == Tiles.LAND):  # if neighbor is alive, increase living neighbor count
                     count += 1
 
         return count
