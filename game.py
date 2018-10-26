@@ -48,6 +48,10 @@ HELI_WIDTH = 1
 HELI_HEIGHT = 1
 HELI_START_VELOCITY_X = 1
 HELI_START_VELOCITY_Y = 0
+BURST_HELI_WIDTH = 2
+BURST_HELI_HEIGHT = 1
+BURST_HELI_START_VELOCITY_X = 1
+BURST_HELI_START_VELOCITY_Y = 0
 fuelhud = 0
 
 BLACK = (0, 0, 0)
@@ -375,6 +379,7 @@ class MovementSystem(esper.Processor):
             self.moveBoats()
             self.moveJets()
             self.moveHelicopters()
+            self.moveBurstHelis()
 
     def movePlayer(self):
         for ent, (p, vel, pos) in self.world.get_components(Player, Velocity, Position):
@@ -404,6 +409,14 @@ class MovementSystem(esper.Processor):
             if (pos.y >= 0):  # if the jets are on screen
                 pos.y += vel.y
 
+    def moveBurstHelis(self): #Will also shoot the burst shot from the burstHeli
+        for ent, (burstHeli, vel, pos, col, rend) in self.world.get_components(BurstHeli, Velocity, Position, Collider, Renderable):
+            #Renderable(pygame.image.load("./images/burstHeli.png")), 
+            if(pos.y >= 0): # don't move enhancedHeli until they are on the screen
+                if(pos.x + vel.x <= 0 or pos.x + vel.x >= COLUMNS): #if burstHeli will go off the screen change directions
+                    vel.x = -vel.x #change direction
+                    rend.sprite = pygame.transform.flip(rend.sprite, True, False) #flip image
+                pos.x += vel.x #change position based on velocity
 
 class Bullet:
     def __init__(self, x, y, x_vel, y_vel, lifespan=BULLET_LIFESPAN):
@@ -454,6 +467,19 @@ class BulletSystem(esper.Processor):
         for ent, (heli_comp, pos) in self.world.get_components(Helicopter, Position):
             heli_comp.shoot_counter += 1
             if(heli_comp.shoot_counter >= heli_comp.shoot_delay):
+                self.enemy_shoot(pos.x, pos.y-1, 0, -1)
+                self.enemy_shoot(pos.x+1, pos.y, 1, 0)
+                self.enemy_shoot(pos.x, pos.y+1, 0, 1)
+                self.enemy_shoot(pos.x-1, pos.y, -1, 0)
+                heli_comp.shoot_counter = 0
+
+        for ent, (burst_heli_comp, pos) in self.world.get_components(BurstHeli, Position):
+            burst_heli_comp.shoot_counter += 1
+            if(heli_comp.shoot_counter >= heli_comp.shoot_delay):
+                self.enemy_shoot(pos.x+1, pos.y-1, 1, -1)
+                self.enemy_shoot(pos.x-1, pos.y+1, -1, 1)
+                self.enemy_shoot(pos.x+1, pos.y+1, 1, 1)
+                self.enemy_shoot(pos.x-1, pos.y-1, -1, -1)
                 self.enemy_shoot(pos.x, pos.y-1, 0, -1)
                 self.enemy_shoot(pos.x+1, pos.y, 1, 0)
                 self.enemy_shoot(pos.x, pos.y+1, 0, 1)
@@ -520,6 +546,9 @@ class Plane:
 class Bridge:
     None
 
+class BurstHeli:
+    None
+
 
 class EnemySystem(esper.Processor):
     def __init__(self):
@@ -533,7 +562,7 @@ class EnemySystem(esper.Processor):
 # class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
     def __init__(self):
-        self.enemy_type_count = 3
+        self.enemy_type_count = 4
         self.initial_spawn_attempts = 10
         self.chunks_required_to_increase_spawn_attempts = 2  # spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0  # how many times a new chunck has been generated
@@ -570,6 +599,8 @@ class SpawnSystem(esper.Processor):
                 self.spawnHeli(randomX, randomY)
             elif (randomNumber == 3):
                 self.spawnJet(randomX, randomY)
+            elif(randomNumber == 4):
+                self.spawnBurstHeli(randomX, randomY)
             
 
         # spawn fuel strips
@@ -641,6 +672,16 @@ class SpawnSystem(esper.Processor):
             Collider(JET_WIDTH, JET_HEIGHT)
         )
         # print("spawnJet()")
+
+    def spawnBurstHeli(self, xpos, ypos):
+        world.create_entity(
+            Enemy(), #all enemies must have this component for enemy-player collisions to work
+            BurstHeli(), #usefull for the moveBurstHeli function
+            Position(xpos, ypos),
+            Velocity(BURST_HELI_START_VELOCITY_X,BURST_HELI_START_VELOCITY_Y),
+            Renderable(pygame.image.load("./images/burstHeli.png")),
+            Collider(BURST_HELI_WIDTH,BURST_HELI_HEIGHT)
+        )
 
     def spawnBomb(self, xpos, ypos):
         # print("spawnBomb()")
