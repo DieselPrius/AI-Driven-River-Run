@@ -29,6 +29,7 @@ BOMB_WIDTH = 30
 BOMB_HEIGHT = 30
 # Frames to wait between scrolls, in frames
 TERRAIN_SCROLL_DELAY = 30
+BULLET_DELAY = 6
 PLAYER_START_POS_X = 14
 PLAYER_START_POS_Y = 27
 
@@ -36,6 +37,7 @@ BOAT_WIDTH = 2
 BOAT_HEIGHT = 1
 BOAT_START_VELOCITY_X = 1
 BOAT_START_VELOCITY_Y = 0
+ENHANCED_BOAT_SHOOT_DELAY = MAX_FPS * 2
 JET_WIDTH = 1
 JET_HEIGHT = 1
 JET_START_VELOCITY_X = 0
@@ -373,6 +375,7 @@ class MovementSystem(esper.Processor):
             self.currentDelay = 0
             self.movePlayer()
             self.moveBoats()
+            self.moveEnhancedBoats()
             self.moveJets()
             self.moveHelicopters()
 
@@ -384,13 +387,23 @@ class MovementSystem(esper.Processor):
             vel.y = 0
 
     def moveBoats(self):
-        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
+        for _, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
+            if (pos.y >= 0):  # don't move boats left/right until they are on screen
+                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)
+                    or (pos.x + vel.x >= COLUMNS) or (pos.x + vel.x < 0)):
+                    # if boat will hit land at its next location or go off screen
+                    vel.x = -vel.x  # change direction
+                    rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
+                pos.x += vel.x  # change position based on velocity
+
+    def moveEnhancedBoats(self):
+        for _, (_, vel, pos, col, rend) in self.world.get_components(EnhancedBoat, Velocity, Position, Collider, Renderable):
             if (pos.y >= 0):  # don't move boats left/right until they are on screen
                 if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)
                     or (pos.x + vel.x >= COLUMNS) or (pos.x + vel.x < 0)):  # if boat will hit land at its next location
                     vel.x = -vel.x  # change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
-                pos.x += vel.x  # change position based on velocity
+                pos.x += vel.x  # change position based on velocity        
 
     def moveHelicopters(self):
         for ent, (heli, vel, pos, col, rend) in self.world.get_components(Helicopter, Velocity, Position, Collider, Renderable):
@@ -427,7 +440,6 @@ class EnemyBullet:
 
 
 class BulletSystem(esper.Processor):
-    enemy_bullet_movement_delay = TERRAIN_SCROLL_DELAY
     delay_counter = 0
 
     def __init__(self):
@@ -438,18 +450,25 @@ class BulletSystem(esper.Processor):
             if (bullet.time_alive >= bullet.lifespan):
                 self.world.delete_entity(ent)
             else:
-                bullet.x += bullet.x_vel
-                bullet.y += bullet.y_vel
-                bullet.time_alive += 1
+                if(self.delay_counter >= BULLET_DELAY):
+                    bullet.x += bullet.x_vel
+                    bullet.y += bullet.y_vel
+                    bullet.time_alive += 1
+                    self.delay_counter = 0
+                else:
+                    self.delay_counter = self.delay_counter + 1
 
         for ent, enemy_bullet in self.world.get_component(EnemyBullet):    
             if (enemy_bullet.time_alive >= enemy_bullet.lifespan):
                 self.world.delete_entity(ent)
             else:
-                restDelay = True
-                enemy_bullet.x += enemy_bullet.x_vel
-                enemy_bullet.y += enemy_bullet.y_vel
-                enemy_bullet.time_alive += 1
+                if(self.delay_counter >= BULLET_DELAY):
+                    enemy_bullet.x += enemy_bullet.x_vel
+                    enemy_bullet.y += enemy_bullet.y_vel
+                    enemy_bullet.time_alive += 1
+                    self.delay_counter = 0
+                else:
+                    self.delay_counter = self.delay_counter + 1
 
 
         for ent, (heli_comp, pos) in self.world.get_components(Helicopter, Position):
@@ -460,6 +479,12 @@ class BulletSystem(esper.Processor):
                 self.enemy_shoot(pos.x, pos.y+1, 0, 1)
                 self.enemy_shoot(pos.x-1, pos.y, -1, 0)
                 heli_comp.shoot_counter = 0
+
+        for ent, (boat, pos) in self.world.get_components(EnhancedBoat, Position):
+            boat.shoot_counter += 1
+            if(boat.shoot_counter >= ENHANCED_BOAT_SHOOT_DELAY):
+                self.enemy_shoot(pos.x, pos.y-1, 0, 1)
+                boat.shoot_counter = 0 
 
         for bullet_ent, bullet in self.world.get_component(Bullet):
             #check for bullet enemy collisions
@@ -512,6 +537,12 @@ class Helicopter:
 class Boat:
     None
 
+class EnhancedBoat:
+    def __init__(self):
+        self.shoot_counter = 0
+
+
+
 class Jet:
     None
 
@@ -534,7 +565,7 @@ class EnemySystem(esper.Processor):
 # class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
     def __init__(self):
-        self.enemy_type_count = 3
+        self.enemy_type_count = 4
         self.initial_spawn_attempts = 10
         self.chunks_required_to_increase_spawn_attempts = 2  # spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0  # how many times a new chunck has been generated
@@ -561,7 +592,6 @@ class SpawnSystem(esper.Processor):
             the_terrain = self.world.component_for_entity(terrain, Terrain)
             randomX = random.randint(0, the_terrain.terrain_width)
             randomY = random.randint(0, the_terrain.terrain_width)
-            #randomY = random.randint(-(the_terrain.terrain_height // 2), -1)
 
             randomNumber = random.randint(1, the_spawner.enemy_type_count)
 
@@ -571,6 +601,8 @@ class SpawnSystem(esper.Processor):
                 self.spawnHeli(randomX, randomY)
             elif (randomNumber == 3):
                 self.spawnJet(randomX, randomY)
+            elif (randomNumber == 4):
+                self.spawnEnhancedBoat(randomX, randomY)
             
 
         # spawn fuel strips
@@ -655,9 +687,18 @@ class SpawnSystem(esper.Processor):
         # print("spawnEnhancedJet()")
         None
 
-    def spawnTurretBoat(self, xpos, ypos):
-        # print("spawnTurretBoat()")
-        None
+    def spawnEnhancedBoat(self, xpos, ypos):
+        # if boat will not spawn on land at this rand x,y position
+        #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(BOAT_WIDTH, BOAT_HEIGHT))):
+        if (not self.CheckForNewChunkLandCollision(xpos, ypos, BOAT_WIDTH, BOAT_HEIGHT)):
+            world.create_entity(
+                Enemy(),  # all enemies must have this component for enemy-player collisions to work
+                EnhancedBoat(),  # useful for the moveBoat function
+                Position(xpos, (-ROWS + ypos)),
+                Velocity(BOAT_START_VELOCITY_X, BOAT_START_VELOCITY_Y),
+                Renderable(pygame.image.load("./images/boat2.png")),
+                Collider(BOAT_WIDTH, BOAT_HEIGHT)
+            )
 
 
     def CheckForNewChunkLandCollision(self, index_pos_x, index_pos_y, coll_width, coll_height):
@@ -673,26 +714,6 @@ class SpawnSystem(esper.Processor):
                         break
 
         return collisionDetected
-
-
-    # # returns true if the an entity will spawn in on land, this checks for OFF-SCREEN LAND COLLISIONS
-    # def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
-    #     landTileRects = []
-    #     # create a collider for all land tiles in the newly created chunck ...
-    #     for _, terrain in world.get_component(Terrain):
-    #         for x in range(terrain.terrain_width):  # for each column
-    #             for y in range(0, terrain.terrain_height // 2):  # for each row in the new chunck
-    #                 if (terrain.tile_matrix[x][y].tile_type == Tiles.LAND):  # if tile is land create a Rect for it
-    #                     landTileRects.append(
-    #                         pygame.Rect(x * TILE_WIDTH, (y - (terrain.terrain_height // 2)) * TILE_HEIGHT, TILE_WIDTH,
-    #                                     TILE_HEIGHT))
-    #     other = colliderComponent.colliderToRect(positionComponent)
-    #     collisionDetected = False
-    #     for landTile in landTileRects:  # for each land tile rect
-    #         if landTile.colliderect(other):  # check if the 'other' collider is hitting a land tile
-    #             collisionDetected = True
-    #             break
-    #     return collisionDetected
 
 
 class Terrain:
@@ -926,34 +947,6 @@ player = world.create_entity(
     Velocity(0, 0),
     Renderable(pygame.image.load("./images/plane.png")),
     Collider(1, 1)
-)
-
-# manually spawn a boat for testing
-world.create_entity(
-    Enemy(),
-    Boat(),
-    Position(3, 5),
-    Velocity(1, 0),
-    Renderable(pygame.image.load("./images/boat.png")),
-    Collider(3, 2)
-)
-
-world.create_entity(
-    Enemy(),
-    Boat(),
-    Position(4, 10),
-    Velocity(1, 0),
-    Renderable(pygame.image.load("./images/boat.png")),
-    Collider(3, 2)
-)
-
-world.create_entity(
-    Enemy(),
-    Boat(),
-    Position(5, 15),
-    Velocity(1, 0),
-    Renderable(pygame.image.load("./images/boat.png")),
-    Collider(3, 2)
 )
 
 world.create_entity(
