@@ -32,6 +32,8 @@ TERRAIN_SCROLL_DELAY = 30
 PLAYER_START_POS_X = 14
 PLAYER_START_POS_Y = 27
 
+BOMB_WIDTH = 1
+BOMB_HEIGHT = 1
 BOAT_WIDTH = 2
 BOAT_HEIGHT = 1
 BOAT_START_VELOCITY_X = 1
@@ -375,6 +377,7 @@ class MovementSystem(esper.Processor):
             self.moveBoats()
             self.moveJets()
             self.moveHelicopters()
+            self.moveEnhancedHelicopters()
 
     def movePlayer(self):
         for ent, (p, vel, pos) in self.world.get_components(Player, Velocity, Position):
@@ -403,6 +406,11 @@ class MovementSystem(esper.Processor):
         for ent, (jet, vel, pos, col, rend) in self.world.get_components(Jet, Velocity, Position, Collider, Renderable):
             if (pos.y >= 0):  # if the jets are on screen
                 pos.y += vel.y
+
+    def moveEnhancedHelicopters(self):
+        for ent, (enheli, vel, pos, col, rend) in self.world.get_components(EnhancedHeli, Velocity, Position, Collider, Renderable):
+            if(pos.y >= 0): #don't move heli left/right until they're on screen
+                pos.x += vel.x
 
 
 class Bullet:
@@ -503,10 +511,16 @@ class BulletSystem(esper.Processor):
 class Enemy:
     None
 
+class Bomb:
+    None
+
 class Helicopter:
     def __init__(self, x):
         self.shoot_delay = x * TERRAIN_SCROLL_DELAY 
         self.shoot_counter = 0
+
+class EnhancedHeli:
+    None
 
 class Boat:
     None
@@ -526,14 +540,26 @@ class EnemySystem(esper.Processor):
         super().__init__()
 
     def process(self):
-        pass
-        # TODO: Update Enemies
+        self.dropHeliBomb()
+        #self.deleteHeli()
+
+    def dropHeliBomb(self):
+        for ent, (enheli, pos, col) in world.get_components(EnhancedHeli, Position, Collider):
+            if (not self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x, pos.y), col)):
+                randomNumber = random.randint(1, 100)
+                if (randomNumber == 50): #1/100 chance to drop bomb every tick
+                    if(pos.x >= 0 and pos.x <= 30):#Only spawn if on screen
+                        self.world.get_processor(SpawnSystem).spawnBomb(pos.x, pos.y)
+    def deleteHeli(self):
+        for ent, (enheli, pos) in self.world.get_components(EnhancedHeli, Position):
+            if (pos.x < 0 or pos.x > TILE_WIDTH):
+                self.world.delete_entity(ent)
 
 
 # class that spawns in objects, draws objects, moves enemies, and contains all objects
 class Spawner:
     def __init__(self):
-        self.enemy_type_count = 3
+        self.enemy_type_count = 4
         self.initial_spawn_attempts = 10
         self.chunks_required_to_increase_spawn_attempts = 2  # spawn attempts will after this many new chunks have been generated
         self.chunk_generation_count = 0  # how many times a new chunck has been generated
@@ -570,7 +596,11 @@ class SpawnSystem(esper.Processor):
                 self.spawnHeli(randomX, randomY)
             elif (randomNumber == 3):
                 self.spawnJet(randomX, randomY)
-            
+            elif (randomNumber == 4):
+                if (randomX > the_terrain.terrain_width / 2): #spawn heli on left side
+                    self.spawnEnhancedHeli(30, randomY)
+                if (randomX <= the_terrain.terrain_width / 2): #spawn heli on right side
+                    self.spawnEnhancedHeli(0, randomY)
 
         # spawn fuel strips
         for i in range(the_spawner.fuel_strip_spawn_attempts):
@@ -643,12 +673,35 @@ class SpawnSystem(esper.Processor):
         # print("spawnJet()")
 
     def spawnBomb(self, xpos, ypos):
-        # print("spawnBomb()")
-        None
+        if( not self.CheckForNewChunkLandCollision(xpos, ypos, BOMB_WIDTH, BOMB_HEIGHT)):
+            world.create_entity(
+	        Enemy(),
+	        Bomb(),
+	        Position(xpos, ypos),
+		Velocity(0, 0),
+		Renderable(pygame.image.load("./images/bomb.png")),
+		Collider(BOMB_WIDTH, BOMB_HEIGHT)
+	)
 
     def spawnEnhancedHeli(self, xpos, ypos):
-        # print("spawnEnhancedHeli()")
-        None
+        if(xpos == 0): #If heli is on left side of screen
+            world.create_entity(
+                Enemy(),
+                EnhancedHeli(),
+                Position(xpos, (-ROWS + ypos)),
+                Velocity(HELI_START_VELOCITY_X, HELI_START_VELOCITY_Y),
+                Renderable(pygame.transform.rotate(pygame.image.load("./images/heli2.png"), -90)),
+                Collider(HELI_WIDTH, HELI_HEIGHT)
+	)
+        else:        #Heli is on right side of screen
+            world.create_entity(
+                Enemy(),
+                EnhancedHeli(),
+                Position(xpos, (-ROWS + ypos)),
+                Velocity(-HELI_START_VELOCITY_X, HELI_START_VELOCITY_Y),
+                Renderable(pygame.transform.rotate(pygame.image.load("./images/heli2.png"), 90)),
+                Collider(HELI_WIDTH, HELI_HEIGHT)
+            )
 
     def spawnEnhancedJet(self, xpos, ypos):
         # print("spawnEnhancedJet()")
@@ -981,6 +1034,7 @@ movement_system = MovementSystem()
 terrain_system = TerrainSystem()
 spawn_system = SpawnSystem()
 bullet_system = BulletSystem()
+enemy_system = EnemySystem()
 
 # Adds the systems to the world. The priority argument is optional, higher values are
 # higher priority. Defaults to 0.
@@ -990,6 +1044,7 @@ world.add_processor(collider_system, 3)
 world.add_processor(movement_system, 4)
 world.add_processor(spawn_system, 5)
 world.add_processor(terrain_system, 6)
+world.add_processor(enemy_system, 7)
 
 # Is the game running?
 run = True
