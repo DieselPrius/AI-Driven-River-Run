@@ -58,6 +58,13 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 ORANGE = (255, 97, 3)
 
+BULLET_SOUND = pygame.mixer.Sound("./sound/BULLET_SOUND.wav")
+EXPLOSION_SOUND = pygame.mixer.Sound("./sound/EXPLOSION_SOUND.wav")
+EXPLOSION_SOUND.set_volume(0.5)
+FUELSTRIP_SOUND = pygame.mixer.Sound("./sound/FUELSTRIP_SOUND.wav")
+FUELSTRIP_SOUND.set_volume(0.05)
+PLAYERDEATH_SOUND = pygame.mixer.Sound("./sound/PLAYERDEATH_SOUND.wav")
+
 # Number of tiles to move a bullet before despawning it
 # (Effectively, a bullet's range)
 BULLET_LIFESPAN = 30
@@ -271,16 +278,19 @@ class ColliderSystem(esper.Processor):
                                        world.component_for_entity(player, Collider))):
             #print("player hit land")
             self.world.component_for_entity(player, Player).kill()
+            pygame.mixer.Sound.play(PLAYERDEATH_SOUND)
 
         # check for player-enemy collisions
         if (self.checkPlayerEnemyCollisions()):
             #print("player hit enemy")
             self.world.component_for_entity(player, Player).kill()
+            pygame.mixer.Sound.play(PLAYERDEATH_SOUND)
 
         # check for player-fuel collisions
         if (self.checkPlayerFuelStripCollisions()):
             #print("player refueling")
             self.world.component_for_entity(player, Player).refuel()
+            pygame.mixer.Sound.play(FUELSTRIP_SOUND)
 
     def checkPlayerFuelStripCollisions(self):
         collisionDetected = False
@@ -467,6 +477,7 @@ class BulletSystem(esper.Processor):
                     self.world.delete_entity(enemy_ent)
                     self.world.delete_entity(bullet_ent)
                     itr = self.world.get_component(Player)
+                    pygame.mixer.Sound.play(EXPLOSION_SOUND)
                     itr[0][1].score += 10
 
             # check for bullet-fuel strip collisions
@@ -474,6 +485,7 @@ class BulletSystem(esper.Processor):
                 if ((bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y - 1))):
                     self.world.delete_entity(fuel_ent)
                     self.world.delete_entity(bullet_ent)
+                    pygame.mixer.Sound.play(EXPLOSION_SOUND)
 
             # check for bullet-land collsions
             if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y), Collider(1, 1))):
@@ -484,6 +496,7 @@ class BulletSystem(esper.Processor):
             for _, enemy_bullet in self.world.get_component(EnemyBullet):
                 if (enemy_bullet.x == player_position.x and enemy_bullet.y == player_position.y):
                     player.kill()
+                    pygame.mixer.Sound.play(PLAYERDEATH_SOUND)
 
     def player_shoot(self, x, y, x_vel, y_vel):
         self.world.component_for_entity(player, Player).fuel -= SHOOT_DEFUEL_PENALTY
@@ -491,6 +504,8 @@ class BulletSystem(esper.Processor):
             Bullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./images/bullet.png"))
         )
+        BULLET_SOUND.set_volume(1)
+        pygame.mixer.Sound.play(BULLET_SOUND)
 
     def enemy_shoot(self, x, y, x_vel, y_vel):
         print("enemy_shoot()")
@@ -498,6 +513,8 @@ class BulletSystem(esper.Processor):
             EnemyBullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./images/enemy_bullet.png"))
         )
+        BULLET_SOUND.set_volume(0.5)
+        pygame.mixer.Sound.play(BULLET_SOUND)
 
 
 class Enemy:
