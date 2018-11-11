@@ -49,6 +49,8 @@ HELI_HEIGHT = 1
 HELI_START_VELOCITY_X = 1
 HELI_START_VELOCITY_Y = 0
 fuelhud = 0
+SHIELD_PICKUP_WIDTH = 1
+SHIELD_PICKUP_HEIGHT = 1
 
 BLACK = (0, 0, 0)
 GREY = (200, 200, 200)
@@ -91,6 +93,7 @@ class Player:
         self.fuel_rate = fuel_rate
         self.defuel_rate = defuel_rate
         self.score = 0
+        self.shield = 0
 
     def kill(self):
         self.lives -= 1
@@ -116,6 +119,11 @@ class Player:
             self.fuel -= self.defuel_rate  # deduct the defuel rate
         else:
             world.component_for_entity(player, Player).kill()  # kill player if out of fuel
+
+    def shieldpickup(self):
+        if self.shield == 0:
+            self.shield = 1
+
 
 
 # Render Component
@@ -187,7 +195,6 @@ class RenderSystem(esper.Processor):
         # render the player last so nothing is drawn over it
         for ent, (p, pos, render) in self.world.get_components(Player, Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
-
 
         for i in range(COLUMNS):
             pygame.draw.rect(win,(131, 135, 142),(i*TILE_WIDTH,(ROWS-1)*TILE_WIDTH,TILE_WIDTH,TILE_HEIGHT))
@@ -282,11 +289,27 @@ class ColliderSystem(esper.Processor):
             #print("player refueling")
             self.world.component_for_entity(player, Player).refuel()
 
+        if (self.checkPlayerShieldPickupCollisions()):
+            self.world.component_for_entity(player, Player).shieldpickup()
+            for shieldpickup_ent, (fs, pos) in self.world.get_components(ShieldPickup, Position):
+                self.world.delete_entity(shieldpickup_ent)
+                print("SHIELD ACQUIRED!")
+
     def checkPlayerFuelStripCollisions(self):
         collisionDetected = False
         player_pos = self.world.component_for_entity(player, Position)
         player_collider = self.world.component_for_entity(player, Collider)
         for ent, (_, pos, col) in self.world.get_components(FuelStrip, Position, Collider):
+            if (self.checkCollision(player_pos, player_collider, pos, col)):
+                collisionDetected = True
+                break
+        return collisionDetected
+
+    def checkPlayerShieldPickupCollisions(self):
+        collisionDetected = False
+        player_pos = self.world.component_for_entity(player, Position)
+        player_collider = self.world.component_for_entity(player, Collider)
+        for ent, (_, pos, col) in self.world.get_components(ShieldPickup, Position, Collider):
             if (self.checkCollision(player_pos, player_collider, pos, col)):
                 collisionDetected = True
                 break
@@ -343,7 +366,6 @@ class FuelStrip:
         None
         # Stateless component, essentially functions as a flag.
 
-
 # Refueling System
 class RefuelingSystem(esper.Processor):
     def __init__(self):
@@ -359,6 +381,9 @@ class RefuelingSystem(esper.Processor):
                     # TODO: Refuel
                     continue
 
+class ShieldPickup:
+    def __init__(self):
+        None
 
 # Movement System
 class MovementSystem(esper.Processor):
@@ -474,6 +499,12 @@ class BulletSystem(esper.Processor):
                 if ((bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y - 1))):
                     self.world.delete_entity(fuel_ent)
                     self.world.delete_entity(bullet_ent)
+            
+            for shieldpickup_ent, (fs, pos) in self.world.get_components(ShieldPickup, Position):
+                if ((bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y - 1))):
+                    self.world.delete_entity(shieldpickup_ent)
+                    print("SHIELD ACQUIRED!")
+                    self.world.delete_entity(bullet_ent)
 
             # check for bullet-land collsions
             if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y), Collider(1, 1))):
@@ -539,6 +570,7 @@ class Spawner:
         self.chunk_generation_count = 0  # how many times a new chunck has been generated
         self.spawn_attempts = 5
         self.fuel_strip_spawn_attempts = 10
+        self.shield_pickup_spawn_attempts = 1
 
 
 # TODO: Implement this system.
@@ -578,13 +610,19 @@ class SpawnSystem(esper.Processor):
             randomX = random.randint(0, the_terrain.terrain_width)
             randomY = random.randint(0, the_terrain.terrain_width)
             self.spawnFuelStrip(randomX, randomY)
-
+        
+        # spawn shield pickups
+        for i in range(the_spawner.shield_pickup_spawn_attempts):
+            the_terrain = self.world.component_for_entity(terrain, Terrain)
+            randomX = random.randint(0, the_terrain.terrain_width)
+            randomY = random.randint(0, the_terrain.terrain_width)
+            self.spawnShieldPickup(randomX, randomY)
+        
         # spawn bridges
         randomNum = random.randint(0,3)
         if(randomNum == 0):
             print("   spawnbridge")
             self.spawnBridge()
-
 
     def spawnBridge(self):
         world.create_entity(
@@ -604,6 +642,15 @@ class SpawnSystem(esper.Processor):
                 Velocity(0, 0),
                 Renderable(pygame.image.load("./images/Fuel.png")),
                 Collider(FUEL_WIDTH, FUEL_HEIGHT)
+            )
+    def spawnShieldPickup(self, xpos, ypos):
+        if (not self.CheckForNewChunkLandCollision(xpos, ypos, FUEL_WIDTH, FUEL_HEIGHT)):
+            world.create_entity(
+                ShieldPickup(),
+                Position(xpos, (-ROWS + ypos)),
+                Velocity(0, 0),
+                Renderable(pygame.image.load("./images/shield_drop.png")),
+                Collider(SHIELD_PICKUP_WIDTH, SHIELD_PICKUP_HEIGHT)
             )
 
     def spawnBoat(self, xpos, ypos):
@@ -926,6 +973,13 @@ player = world.create_entity(
     Renderable(pygame.image.load("./images/plane.png")),
     Collider(1, 1)
 )
+#shield = world.create_entity(
+#   Position(14, 27),
+#    Shield(),
+#    Velocity(0, 0),
+#    Renderable(pygame.image.load("./images/shield_player.png")),
+#    Collider(0, 0)
+#)
 
 # manually spawn a boat for testing
 world.create_entity(
