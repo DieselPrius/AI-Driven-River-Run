@@ -1,3 +1,4 @@
+from pygame.transform import *
 import pygame
 import os
 import random
@@ -93,20 +94,24 @@ class Player:
         self.fuel_rate = fuel_rate
         self.defuel_rate = defuel_rate
         self.score = 0
-        self.shield = 0
+        self.shield = 0 # Start with no shield
 
     def kill(self):
-        self.lives -= 1
-        self.fuel = self.max
-        if (self.lives == 0):
-            print("GAME OVER")  # load title screen etc
-        world.get_processor(TerrainSystem).clearTerrain()  # clear terrain
-        for ent, _ in world.get_component(Position):  # clear all enemy entities
-            if (ent != player):  # dont delete player
-                world.delete_entity(ent, True)  # clear all enemy entities
-        world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain, Terrain))  # re-intialize terrain
-        world.component_for_entity(player, Position).x = PLAYER_START_POS_X  # change player position
-        world.component_for_entity(player, Position).y = PLAYER_START_POS_Y  # change player position
+        if (self.shield == 0):
+            self.lives -= 1
+            self.fuel = self.max
+            if (self.lives == 0):
+                print("GAME OVER")  # load title screen etc
+            world.get_processor(TerrainSystem).clearTerrain()  # clear terrain
+            for ent, _ in world.get_component(Position):  # clear all enemy entities
+                if (ent != player):  # dont delete player
+                    world.delete_entity(ent, True)  # clear all enemy entities
+            world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain, Terrain))  # re-intialize terrain
+            world.component_for_entity(player, Position).x = PLAYER_START_POS_X  # change player position
+            world.component_for_entity(player, Position).y = PLAYER_START_POS_Y  # change player position
+        else:
+            self.shield = 0
+            print("SHIELD DEPELETED")
 
     def refuel(self):
         if self.fuel + self.fuel_rate <= self.max:
@@ -281,7 +286,7 @@ class ColliderSystem(esper.Processor):
 
         # check for player-enemy collisions
         if (self.checkPlayerEnemyCollisions()):
-            #print("player hit enemy")
+            print("player hit enemy")
             self.world.component_for_entity(player, Player).kill()
 
         # check for player-fuel collisions
@@ -293,6 +298,7 @@ class ColliderSystem(esper.Processor):
             self.world.component_for_entity(player, Player).shieldpickup()
             for shieldpickup_ent, (fs, pos) in self.world.get_components(ShieldPickup, Position):
                 self.world.delete_entity(shieldpickup_ent)
+                
                 print("SHIELD ACQUIRED!")
 
     def checkPlayerFuelStripCollisions(self):
@@ -322,6 +328,12 @@ class ColliderSystem(esper.Processor):
         player_collider = self.world.component_for_entity(player, Collider)
         for ent, (_, pos, col) in self.world.get_components(Enemy, Position, Collider):
             if (self.checkCollision(player_pos, player_collider, pos, col)):
+
+                ## Sad attempt to delete the enemy you collide with for the player shield.
+                # for enemy_ent, (enemy, enemy_position, enemy_collider) in self.world.get_components(Enemy, Position, Collider):
+                #    if( (player_pos.x >= enemy_position.x and player_pos.x < enemy_position.x + enemy_collider.t_width) and (player_pos.y >= enemy_position.y and player_pos.y < enemy_position.y + enemy_collider.t_height)):
+                #        self.world.delete_entity(enemy_ent)
+                
                 collisionDetected = True
                 break
         return collisionDetected
@@ -524,7 +536,7 @@ class BulletSystem(esper.Processor):
         )
 
     def enemy_shoot(self, x, y, x_vel, y_vel):
-        print("enemy_shoot()")
+        #print("enemy_shoot()")
         world.create_entity(
             EnemyBullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./images/enemy_bullet.png"))
@@ -973,13 +985,6 @@ player = world.create_entity(
     Renderable(pygame.image.load("./images/plane.png")),
     Collider(1, 1)
 )
-#shield = world.create_entity(
-#   Position(14, 27),
-#    Shield(),
-#    Velocity(0, 0),
-#    Renderable(pygame.image.load("./images/shield_player.png")),
-#    Collider(0, 0)
-#)
 
 # manually spawn a boat for testing
 world.create_entity(
