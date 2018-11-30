@@ -3,6 +3,12 @@ import os
 import random
 import esper
 from enum import Enum
+import socket
+import platform
+import sys
+import threading
+import time
+from queue import Queue
 
 pygame.init()
 
@@ -20,7 +26,7 @@ COLUMNS = SCREEN_WIDTH // TILE_WIDTH
 # Player speed, in tiles per action.
 PLAYER_SPEED = 1
 # Maximum frames to process per second.
-MAX_FPS = 60
+MAX_FPS = 30
 # Background color to render for empty space.
 BACKGROUND_COLOR = (0, 0, 0)
 # Bomb width, in pixels.
@@ -64,6 +70,170 @@ BULLET_LIFESPAN = 30
 
 SHOOT_DEFUEL_PENALTY = 1  # how much the player will be defueled when they shoot
 
+MODE = 1
+all_connections = []  # ip
+all_addresses = []  # port
+all_os = []  # operating system
+all_version = []  # version
+all_commands = ['select', 'list']  # commands
+
+
+sox = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sox.connect(("8.8.8.8", 80))
+print(sox.getsockname()[0])
+
+
+class Button:
+    def __init__(self, txt, location, action, bg=BLACK, fg=WHITE, size=(300, 50), font_name="timesnewroman", font_size=25):
+        self.color = bg  # the static (normal) color
+        self.bg = bg  # actual background color, can change on mouseover
+        self.fg = fg  # text color
+        self.size = size
+
+        self.font = pygame.font.SysFont(font_name, font_size)
+        self.font.set_bold(1)
+        self.txt = txt
+        self.txt_surf = self.font.render(self.txt, 1, self.fg)
+        self.txt_rect = self.txt_surf.get_rect(center=[s//2 for s in self.size])
+
+        self.surface = pygame.surface.Surface(size)
+        self.rect = self.surface.get_rect(center=location)
+
+        self.call_back_ = action
+
+    def draw(self):
+        self.mouseover()
+
+        self.surface.fill(self.bg)
+        self.surface.blit(self.txt_surf, self.txt_rect)
+        win.blit(self.surface, self.rect)
+
+    def mouseover(self):
+        self.bg = self.color
+        pos = pygame.mouse.get_pos()
+        if self.rect.collidepoint(pos):
+            self.bg = GREY  # mouseover color
+
+    def call_back(self):
+        self.call_back_()
+
+
+def run_single():
+    global MODE
+    MODE = 2
+
+
+def run_ai():
+    global MODE, conn
+    MODE = 3
+    conn = accept_connections()
+
+
+def mousebuttondown():
+    pos = pygame.mouse.get_pos()
+    for button in buttons:
+        if button.rect.collidepoint(pos):
+            button.call_back()
+
+
+def text_to_win(text, xpos, ypos, color, size=70):
+    c = color
+    font = pygame.font.SysFont('timesnewroman', size)
+    font.set_bold(1)
+    text = str(text)
+    text = font.render(text, True, c)
+    win.blit(text, (xpos, ypos))
+
+button_01 = Button("Single Player", (182, 140), run_single)
+button_02 = Button("AI", (182, 195), run_ai)
+
+
+def show_high_scores(surface):
+    high_score = ['H','I','G','H',' ', 'S','C','O','R','E',':']
+
+    start_pos_x = 10
+    start_pos_y = 155
+    '''
+    for i in range(len(high_score)):
+        rand_color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        start_pos_x += 18
+        text_to_win(high_score[i], start_pos_x, start_pos_y, rand_color, size=30)
+    '''
+    rand_color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    text_to_win("HIGH SCORES", 30, start_pos_y, rand_color, size=45)
+
+    high_scores = open("high scores", "r")
+    lines = high_scores.read().split('\n')
+
+    pygame.draw.rect(surface, WHITE, (30, 190, 145, 200))
+    pygame.draw.rect(surface, BLACK, (30, 190, 145, 200), 3)
+
+    y_pos = start_pos_y+15
+    for line in lines:
+        y_pos += 20
+        text_to_win(str(line), 35, y_pos, BLACK, size=20)
+
+buttons = [button_01, button_02]
+
+def socket_create():
+    try:
+        global host
+        global port
+        global s
+
+        host = sox.getsockname()[0]
+        sox.close()
+        port = 4444
+
+        s = socket.socket()
+    except socket.error as msg:
+        print("Socket Error: " + str(msg))
+
+
+def socket_bind():
+    try:
+        global host
+        global port
+        global s
+        print("Binding socket to port: " + str(port))
+
+        s.bind((host, port))
+
+        # 5 is number of bad connections before refused
+        s.listen(5)
+
+    except socket.error as msg:
+        print("Binding Error: " + str(msg) + "\n" + "Retrying...")
+
+    print("Successfully Bound the Server")
+
+
+def accept_connections():
+    global all_connections, conn
+    for i in all_connections:
+        i.close()
+    del all_connections[:]
+    del all_addresses[:]
+
+    while 1:
+        if len(all_connections) == 1:
+            return all_connections[0]
+            break
+        try:
+            conn, address = s.accept()
+            conn.setblocking(1)
+            all_connections.append(conn)
+            all_addresses.append(address)
+            print("\nConnection Established | " + address[0] + '\n', end='')
+        except:
+            None
+            # print("Connection Error")
+
+socket_create()
+socket_bind()
+conn = None
+# conn = accept_connections()
+
 win = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("River Run AI")
 
@@ -93,15 +263,19 @@ class Player:
         self.score = 0
 
     def kill(self):
+        global MODE
         self.lives -= 1
         self.fuel = self.max
         if (self.lives == 0):
+            self.__init__()
+            MODE = 1
             print("GAME OVER")  # load title screen etc
         world.get_processor(TerrainSystem).clearTerrain()  # clear terrain
         for ent, _ in world.get_component(Position):  # clear all enemy entities
             if (ent != player):  # dont delete player
                 world.delete_entity(ent, True)  # clear all enemy entities
-        world.get_processor(TerrainSystem).generate_initial_terrain(world.component_for_entity(terrain, Terrain))  # re-intialize terrain
+        world.get_processor(TerrainSystem).generate_initial_terrain(
+            world.component_for_entity(terrain, Terrain))  # re-intialize terrain
         world.component_for_entity(player, Position).x = PLAYER_START_POS_X  # change player position
         world.component_for_entity(player, Position).y = PLAYER_START_POS_Y  # change player position
 
@@ -164,16 +338,16 @@ class RenderSystem(esper.Processor):
         # Render the Entities . . .
         for ent, (pos, render) in self.world.get_components(Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
-        
-        #render fuel stips
-        for ent, (pos, render, fs) in self.world.get_components(Position, Renderable, FuelStrip):
-             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
-        #render enemies
+        # render fuel stips
+        for ent, (pos, render, fs) in self.world.get_components(Position, Renderable, FuelStrip):
+            self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
+
+        # render enemies
         for ent, (pos, render, ec) in self.world.get_components(Position, Renderable, Enemy):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
-        #render bridge on top of enemies to make it appear as if the enemies are under the bridge
+        # render bridge on top of enemies to make it appear as if the enemies are under the bridge
         for ent, (pos, render, br) in self.world.get_components(Position, Renderable, Bridge):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
@@ -188,32 +362,28 @@ class RenderSystem(esper.Processor):
         for ent, (p, pos, render) in self.world.get_components(Player, Position, Renderable):
             self.window.blit(render.sprite, (pos.x * TILE_WIDTH, pos.y * TILE_HEIGHT))
 
-
         for i in range(COLUMNS):
-            pygame.draw.rect(win,(131, 135, 142),(i*TILE_WIDTH,(ROWS-1)*TILE_WIDTH,TILE_WIDTH,TILE_HEIGHT))
-
+            pygame.draw.rect(win, (131, 135, 142), (i * TILE_WIDTH, (ROWS - 1) * TILE_WIDTH, TILE_WIDTH, TILE_HEIGHT))
 
         text_color = (221, 185, 75)
 
         # Display fuel level
         p = world.component_for_entity(player, Player)
         myfont = pygame.font.SysFont("Times New Roman", 30)
-        #textsurface = myfont.render(str(p.fuel), False, (255, 0, 0))
+        # textsurface = myfont.render(str(p.fuel), False, (255, 0, 0))
         scorefont = pygame.font.SysFont("Times New Roman", 25)
         scorefont.set_bold(1)
         score = str(p.score)
         scoretext = scorefont.render(score, True, text_color)
-        #win.blit(textsurface, (0, 0))
+        # win.blit(textsurface, (0, 0))
         win.blit(scoretext, (570, 870))
 
-
-        #display lives
+        # display lives
         lives = str(p.lives)
         livesfont = pygame.font.SysFont("Times New Roman", 25)
         livesfont.set_bold(1)
         livestext = livesfont.render(lives, True, text_color)
-        win.blit(livestext, (320,870))
-
+        win.blit(livestext, (320, 870))
 
         # drawing HUD
         font = pygame.font.SysFont('timesnewroman', 15)
@@ -222,10 +392,10 @@ class RenderSystem(esper.Processor):
         empty = font.render(text[0], True, BLACK)
         divide = font.render(text[1], True, BLACK)
         full = font.render(text[2], True, BLACK)
-        xstart = 400 #5
-        ystart = 873 #3
-        fuel_full = 535 #230
-        fuel_empt = 365 #60
+        xstart = 400  # 5
+        ystart = 873  # 3
+        fuel_full = 535  # 230
+        fuel_empt = 365  # 60
         # assume fuel_start = 100
         location = fuel_full - (100 - p.fuel) * (fuel_full - fuel_empt) / 100
         # original box
@@ -269,17 +439,17 @@ class ColliderSystem(esper.Processor):
         # check for player-land collisions
         if (self.checkForLandCollision(world.component_for_entity(player, Position),
                                        world.component_for_entity(player, Collider))):
-            #print("player hit land")
+            # print("player hit land")
             self.world.component_for_entity(player, Player).kill()
 
         # check for player-enemy collisions
         if (self.checkPlayerEnemyCollisions()):
-            #print("player hit enemy")
+            # print("player hit enemy")
             self.world.component_for_entity(player, Player).kill()
 
         # check for player-fuel collisions
         if (self.checkPlayerFuelStripCollisions()):
-            #print("player refueling")
+            # print("player refueling")
             self.world.component_for_entity(player, Player).refuel()
 
     def checkPlayerFuelStripCollisions(self):
@@ -384,17 +554,21 @@ class MovementSystem(esper.Processor):
             vel.y = 0
 
     def moveBoats(self):
-        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider, Renderable):
+        for ent, (boat, vel, pos, col, rend) in self.world.get_components(Boat, Velocity, Position, Collider,
+                                                                          Renderable):
             if (pos.y >= 0):  # don't move boats left/right until they are on screen
-                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)):  # if boat will hit land at its next location
+                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y),
+                                                                                   col)):  # if boat will hit land at its next location
                     vel.x = -vel.x  # change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
                 pos.x += vel.x  # change position based on velocity
 
     def moveHelicopters(self):
-        for ent, (heli, vel, pos, col, rend) in self.world.get_components(Helicopter, Velocity, Position, Collider, Renderable):
+        for ent, (heli, vel, pos, col, rend) in self.world.get_components(Helicopter, Velocity, Position, Collider,
+                                                                          Renderable):
             if (pos.y >= 0):  # don't move heli left/right until they are on screen
-                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y), col)):  # if heli will hit land at its next location
+                if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(pos.x + vel.x, pos.y),
+                                                                                   col)):  # if heli will hit land at its next location
                     vel.x = -vel.x  # change direction
                     rend.sprite = pygame.transform.flip(rend.sprite, True, False)  # flip image
                 pos.x += vel.x  # change position based on velocity
@@ -441,7 +615,7 @@ class BulletSystem(esper.Processor):
                 bullet.y += bullet.y_vel
                 bullet.time_alive += 1
 
-        for ent, enemy_bullet in self.world.get_component(EnemyBullet):    
+        for ent, enemy_bullet in self.world.get_component(EnemyBullet):
             if (enemy_bullet.time_alive >= enemy_bullet.lifespan):
                 self.world.delete_entity(ent)
             else:
@@ -450,20 +624,21 @@ class BulletSystem(esper.Processor):
                 enemy_bullet.y += enemy_bullet.y_vel
                 enemy_bullet.time_alive += 1
 
-
         for ent, (heli_comp, pos) in self.world.get_components(Helicopter, Position):
             heli_comp.shoot_counter += 1
-            if(heli_comp.shoot_counter >= heli_comp.shoot_delay):
-                self.enemy_shoot(pos.x, pos.y-1, 0, -1)
-                self.enemy_shoot(pos.x+1, pos.y, 1, 0)
-                self.enemy_shoot(pos.x, pos.y+1, 0, 1)
-                self.enemy_shoot(pos.x-1, pos.y, -1, 0)
+            if (heli_comp.shoot_counter >= heli_comp.shoot_delay):
+                self.enemy_shoot(pos.x, pos.y - 1, 0, -1)
+                self.enemy_shoot(pos.x + 1, pos.y, 1, 0)
+                self.enemy_shoot(pos.x, pos.y + 1, 0, 1)
+                self.enemy_shoot(pos.x - 1, pos.y, -1, 0)
                 heli_comp.shoot_counter = 0
 
         for bullet_ent, bullet in self.world.get_component(Bullet):
-            #check for bullet enemy collisions
-            for enemy_ent, (enemy, enemy_position, enemy_collider) in self.world.get_components(Enemy, Position, Collider):
-                if( (bullet.x >= enemy_position.x and bullet.x < enemy_position.x + enemy_collider.t_width) and (bullet.y >= enemy_position.y and bullet.y < enemy_position.y + enemy_collider.t_height)):
+            # check for bullet enemy collisions
+            for enemy_ent, (enemy, enemy_position, enemy_collider) in self.world.get_components(Enemy, Position,
+                                                                                                Collider):
+                if ((bullet.x >= enemy_position.x and bullet.x < enemy_position.x + enemy_collider.t_width) and (
+                        bullet.y >= enemy_position.y and bullet.y < enemy_position.y + enemy_collider.t_height)):
                     self.world.delete_entity(enemy_ent)
                     self.world.delete_entity(bullet_ent)
                     itr = self.world.get_component(Player)
@@ -476,7 +651,8 @@ class BulletSystem(esper.Processor):
                     self.world.delete_entity(bullet_ent)
 
             # check for bullet-land collsions
-            if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y), Collider(1, 1))):
+            if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y),
+                                                                               Collider(1, 1))):
                 self.world.delete_entity(bullet_ent)
 
         # check for player-enemy_bullet collisions
@@ -503,19 +679,24 @@ class BulletSystem(esper.Processor):
 class Enemy:
     None
 
+
 class Helicopter:
     def __init__(self, x):
-        self.shoot_delay = x * TERRAIN_SCROLL_DELAY 
+        self.shoot_delay = x * TERRAIN_SCROLL_DELAY
         self.shoot_counter = 0
+
 
 class Boat:
     None
 
+
 class Jet:
     None
 
+
 class Plane:
     None
+
 
 class Bridge:
     None
@@ -553,14 +734,15 @@ class SpawnSystem(esper.Processor):
     def spawnEnemies(self):
         the_spawner = self.world.component_for_entity(spawner, Spawner)
         the_spawner.chunk_generation_count += 1
-        the_spawner.spawn_attempts = (the_spawner.chunk_generation_count // the_spawner.chunks_required_to_increase_spawn_attempts) + the_spawner.initial_spawn_attempts
+        the_spawner.spawn_attempts = (
+                                     the_spawner.chunk_generation_count // the_spawner.chunks_required_to_increase_spawn_attempts) + the_spawner.initial_spawn_attempts
 
         # spawn enemies
         for i in range(the_spawner.spawn_attempts):
             the_terrain = self.world.component_for_entity(terrain, Terrain)
             randomX = random.randint(0, the_terrain.terrain_width)
             randomY = random.randint(0, the_terrain.terrain_width)
-            #randomY = random.randint(-(the_terrain.terrain_height // 2), -1)
+            # randomY = random.randint(-(the_terrain.terrain_height // 2), -1)
 
             randomNumber = random.randint(1, the_spawner.enemy_type_count)
 
@@ -570,7 +752,6 @@ class SpawnSystem(esper.Processor):
                 self.spawnHeli(randomX, randomY)
             elif (randomNumber == 3):
                 self.spawnJet(randomX, randomY)
-            
 
         # spawn fuel strips
         for i in range(the_spawner.fuel_strip_spawn_attempts):
@@ -580,11 +761,10 @@ class SpawnSystem(esper.Processor):
             self.spawnFuelStrip(randomX, randomY)
 
         # spawn bridges
-        randomNum = random.randint(0,3)
-        if(randomNum == 0):
+        randomNum = random.randint(0, 3)
+        if (randomNum == 0):
             print("   spawnbridge")
             self.spawnBridge()
-
 
     def spawnBridge(self):
         world.create_entity(
@@ -596,7 +776,7 @@ class SpawnSystem(esper.Processor):
         )
 
     def spawnFuelStrip(self, xpos, ypos):
-        #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(FUEL_WIDTH, FUEL_HEIGHT))):
+        # if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(FUEL_WIDTH, FUEL_HEIGHT))):
         if (not self.CheckForNewChunkLandCollision(xpos, ypos, FUEL_WIDTH, FUEL_HEIGHT)):
             world.create_entity(
                 FuelStrip(),
@@ -608,7 +788,7 @@ class SpawnSystem(esper.Processor):
 
     def spawnBoat(self, xpos, ypos):
         # if boat will not spawn on land at this rand x,y position
-        #if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(BOAT_WIDTH, BOAT_HEIGHT))):
+        # if (not self.CheckForNewChunkLandCollision(Position(xpos, ypos), Collider(BOAT_WIDTH, BOAT_HEIGHT))):
         if (not self.CheckForNewChunkLandCollision(xpos, ypos, BOAT_WIDTH, BOAT_HEIGHT)):
             world.create_entity(
                 Enemy(),  # all enemies must have this component for enemy-player collisions to work
@@ -623,13 +803,13 @@ class SpawnSystem(esper.Processor):
         if (not self.CheckForNewChunkLandCollision(xpos, ypos, BOAT_WIDTH, BOAT_HEIGHT)):
             world.create_entity(
                 Enemy(),  # all enemies must have this component for enemy-player collisions to work
-                Helicopter(random.randint(5,10)),  # usefull for the moveBoat function
+                Helicopter(random.randint(5, 10)),  # usefull for the moveBoat function
                 Position(xpos, (-ROWS + ypos)),
                 Velocity(HELI_START_VELOCITY_X, HELI_START_VELOCITY_Y),
                 Renderable(pygame.image.load("./images/heli2.png")),
                 Collider(HELI_WIDTH, HELI_HEIGHT)
             )
-        #self.spawnBoat(xpos,ypos)
+            # self.spawnBoat(xpos,ypos)
 
     def spawnJet(self, xpos, ypos):
         world.create_entity(
@@ -658,40 +838,39 @@ class SpawnSystem(esper.Processor):
         # print("spawnTurretBoat()")
         None
 
-
     def CheckForNewChunkLandCollision(self, index_pos_x, index_pos_y, coll_width, coll_height):
         collisionDetected = False
         for _, terrain in world.get_component(Terrain):
             for x in range(coll_width):
                 for y in range(coll_height):
-                    if(index_pos_x + x >= terrain.terrain_width):
+                    if (index_pos_x + x >= terrain.terrain_width):
                         collisionDetected = True
                         break
-                    if(terrain.tile_matrix[index_pos_x + x][index_pos_y + y].tile_type == Tiles.LAND):
+                    if (terrain.tile_matrix[index_pos_x + x][index_pos_y + y].tile_type == Tiles.LAND):
                         collisionDetected = True
                         break
 
         return collisionDetected
 
 
-    # # returns true if the an entity will spawn in on land, this checks for OFF-SCREEN LAND COLLISIONS
-    # def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
-    #     landTileRects = []
-    #     # create a collider for all land tiles in the newly created chunck ...
-    #     for _, terrain in world.get_component(Terrain):
-    #         for x in range(terrain.terrain_width):  # for each column
-    #             for y in range(0, terrain.terrain_height // 2):  # for each row in the new chunck
-    #                 if (terrain.tile_matrix[x][y].tile_type == Tiles.LAND):  # if tile is land create a Rect for it
-    #                     landTileRects.append(
-    #                         pygame.Rect(x * TILE_WIDTH, (y - (terrain.terrain_height // 2)) * TILE_HEIGHT, TILE_WIDTH,
-    #                                     TILE_HEIGHT))
-    #     other = colliderComponent.colliderToRect(positionComponent)
-    #     collisionDetected = False
-    #     for landTile in landTileRects:  # for each land tile rect
-    #         if landTile.colliderect(other):  # check if the 'other' collider is hitting a land tile
-    #             collisionDetected = True
-    #             break
-    #     return collisionDetected
+        # # returns true if the an entity will spawn in on land, this checks for OFF-SCREEN LAND COLLISIONS
+        # def CheckForNewChunkLandCollision(self, positionComponent, colliderComponent):
+        #     landTileRects = []
+        #     # create a collider for all land tiles in the newly created chunck ...
+        #     for _, terrain in world.get_component(Terrain):
+        #         for x in range(terrain.terrain_width):  # for each column
+        #             for y in range(0, terrain.terrain_height // 2):  # for each row in the new chunck
+        #                 if (terrain.tile_matrix[x][y].tile_type == Tiles.LAND):  # if tile is land create a Rect for it
+        #                     landTileRects.append(
+        #                         pygame.Rect(x * TILE_WIDTH, (y - (terrain.terrain_height // 2)) * TILE_HEIGHT, TILE_WIDTH,
+        #                                     TILE_HEIGHT))
+        #     other = colliderComponent.colliderToRect(positionComponent)
+        #     collisionDetected = False
+        #     for landTile in landTileRects:  # for each land tile rect
+        #         if landTile.colliderect(other):  # check if the 'other' collider is hitting a land tile
+        #             collisionDetected = True
+        #             break
+        #     return collisionDetected
 
 
 class Terrain:
@@ -712,6 +891,9 @@ class Terrain:
 
         self.initialized = False
 
+    def get_scroll(self):
+        return self.scroll_pos
+
 
 # Enum for terrain tile types
 class Tiles(Enum):
@@ -731,10 +913,10 @@ class TerrainTile:
 
     def set_tile_type(self, tile_type):
         self.tile_type = tile_type
-        if(tile_type == Tiles.WATER):
-            self.color = (0,0,random.randint(self.lower_bound_water,self.upper_bound_water))
+        if (tile_type == Tiles.WATER):
+            self.color = (0, 0, random.randint(self.lower_bound_water, self.upper_bound_water))
         else:
-            self.color = (0,random.randint(self.lower_bound_land,self.upper_bound_land),0)
+            self.color = (0, random.randint(self.lower_bound_land, self.upper_bound_land), 0)
 
 
 class TerrainSystem(esper.Processor):
@@ -817,7 +999,8 @@ class TerrainSystem(esper.Processor):
             # copy upper terrain down
             for x in range(terrain.terrain_width):
                 for y in range(terrain.terrain_height // 2):  # 0 to 29
-                    terrain.tile_matrix[x][y + (terrain.terrain_height // 2)].set_tile_type(terrain.tile_matrix[x][y].tile_type)
+                    terrain.tile_matrix[x][y + (terrain.terrain_height // 2)].set_tile_type(
+                        terrain.tile_matrix[x][y].tile_type)
 
             # load new chunck into upper terrain
             self.generate_chunk(terrain, self.generate_noise())
@@ -888,15 +1071,16 @@ class TerrainSystem(esper.Processor):
                 neighbor_y = y + j
 
                 if (
-                        i == 0 and j == 0):  # don't do anything if you are looking at the cell whose neighbors you want to count
+                                i == 0 and j == 0):  # don't do anything if you are looking at the cell whose neighbors you want to count
                     pass
                 elif (
-                        neighbor_x < 0 or neighbor_x >= COLUMNS):  # if cell has no above neighbors or below neighbors count those non-existance neighbors as dead
+                                neighbor_x < 0 or neighbor_x >= COLUMNS):  # if cell has no above neighbors or below neighbors count those non-existance neighbors as dead
                     count += 0
                 elif (
-                        neighbor_y < 0 or neighbor_y >= ROWS):  # if cell has no right/left neighbors, count them as living
+                                neighbor_y < 0 or neighbor_y >= ROWS):  # if cell has no right/left neighbors, count them as living
                     count += 1
-                elif (noise_map[neighbor_x][neighbor_y] == Tiles.LAND):  # if neighbor is alive, increase living neighbor count
+                elif (noise_map[neighbor_x][
+                          neighbor_y] == Tiles.LAND):  # if neighbor is alive, increase living neighbor count
                     count += 1
 
         return count
@@ -996,42 +1180,191 @@ run = True
 # The clock object tracks time.
 clock = pygame.time.Clock()
 
+count = 0
+frame = 0
+moves = 0
 # Main Game Loop
+# NEED TO FIX SOME OF THE ENEMY STUFF
 while run:
 
-    # ================================= LISTEN FOR EVENTS ========================================================
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            # We're no longer running. Closes the game at the end of the current frame.
-            run = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                player_pos = world.component_for_entity(player, Position)
-                bullet_system.player_shoot(
-                    player_pos.x,
-                    player_pos.y - 1,
-                    0,
-                    -1
-                )
-            if event.key == pygame.K_LEFT:
-                # Move the player left.
-                if (world.component_for_entity(player, Position).x - 1 >= 0):
-                    world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
-            if event.key == pygame.K_RIGHT:
-                # Move the player right.
-                if (world.component_for_entity(player, Position).x + 1 <= (COLUMNS - 1)):
-                    world.component_for_entity(player, Velocity).x = PLAYER_SPEED
-            if event.key == pygame.K_UP:
-                # Move the player up.
-                if (world.component_for_entity(player, Position).y - 1 >= 0):
-                    world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
-            if event.key == pygame.K_DOWN:
-                # Move the player down.
-                if (world.component_for_entity(player, Position).y + 1 < (ROWS - 1)):
-                    world.component_for_entity(player, Velocity).y = PLAYER_SPEED
-    world.process()
-    # Pauses the thread if the frame was quick to process, effectively limiting the framerate.
-    clock.tick(MAX_FPS)
+    while run and MODE == 1:
+        if MODE == 2 or MODE == 3:
+            break
+        image = pygame.image.load("backround.png")
+        win.blit(image, (0, 0))
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mousebuttondown()
+        for button in buttons:
+            button.draw()
+
+        text_to_win("RIVER RUN", 30, 25, BLACK, size=90)
+        text_to_win("RIVER RUN", 40, 15, ORANGE, size=90)
+        # show_high_scores(win)
+        pygame.display.flip()
+        pygame.time.wait(40)
+
+    while run and MODE == 2:
+        p = world.component_for_entity(player, Player)
+        if p.lives == 0:
+            MODE = 1
+            break
+        # ================================= LISTEN FOR EVENTS ========================================================
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # We're no longer running. Closes the game at the end of the current frame.
+                run = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    player_pos = world.component_for_entity(player, Position)
+                    bullet_system.player_shoot(
+                        player_pos.x,
+                        player_pos.y - 1,
+                        0,
+                        -1
+                    )
+                if event.key == pygame.K_LEFT:
+                    # Move the player left.
+                    if (world.component_for_entity(player, Position).x - 1 >= 0):
+                        world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
+                if event.key == pygame.K_RIGHT:
+                    # Move the player right.
+                    if (world.component_for_entity(player, Position).x + 1 <= (COLUMNS - 1)):
+                        world.component_for_entity(player, Velocity).x = PLAYER_SPEED
+                if event.key == pygame.K_UP:
+                    # Move the player up.
+                    if (world.component_for_entity(player, Position).y - 1 >= 0):
+                        world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
+                if event.key == pygame.K_DOWN:
+                    # Move the player down.
+                    if (world.component_for_entity(player, Position).y + 1 < (ROWS - 1)):
+                        world.component_for_entity(player, Velocity).y = PLAYER_SPEED
+        world.process()
+        # Pauses the thread if the frame was quick to process, effectively limiting the framerate.
+        clock.tick(MAX_FPS)
+
+    while run and MODE == 3:
+        p = world.component_for_entity(player, Player)
+        if p.lives == 0:
+            MODE = 1
+            break
+        ai_move = None
+        ai_moves = None
+        # ================================= LISTEN FOR EVENTS ========================================================
+        for event in pygame. event.get():
+            if event.type == pygame.QUIT:
+                # We're no longer running. Closes the game at the end of the current frame.
+                run = False
+        # print(ai_move)
+
+        world.process()
+
+        if count == 0:
+            print(moves)
+            # create a collider for all on-screen land tiles ...
+            land_print = []
+            for i in reversed(range(30)):
+                index = 29 - i
+                land_print.append([])
+                for j in range(30):
+                    if world.component_for_entity(terrain, Terrain).tile_matrix[j][world.component_for_entity(terrain, Terrain).get_scroll() - (i+1)].tile_type == Tiles.LAND:
+                        land_print[index].append(["L", 1, 0])
+                    else:
+                        land_print[index].append(["W", 1, 0])
+
+            for ent, (pos, render, fs) in world.get_components(Position, Renderable, FuelStrip):
+                # print("FUEL: " + str(pos.x) + ", " + str(pos.y))
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    land_print[pos.y][pos.x] = ["F", 1, 0]
+                    if pos.y < 29:
+                        land_print[pos.y+1][pos.x] = ["F", 1, 0]
+
+            for ent, (heli, pos, vel) in world.get_components(Helicopter, Position, Velocity):
+                # print("HELI: " + str(pos.x) + ", " + str(pos.y) + ", " + str(vel.x) + ", " + str(vel.y))
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    land_print[pos.y][pos.x] = ["H", 1+vel.y, vel.x]
+
+            for ent, (jet, pos, vel) in world.get_components(Jet, Position, Velocity):
+                # print("JET: " + str(pos.x) + ", " + str(pos.y) + ", " + str(vel.x) + ", " + str(vel.y))
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    land_print[pos.y][pos.x] = ["J", 1+vel.y, vel.x]
+
+            for ent, (boat, pos, vel) in world.get_components(Boat, Position, Velocity):
+                # print("BOAT: " + str(pos.x) + ", " + str(pos.y) + ", " + str(vel.x) + ", " + str(vel.y))
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    land_print[pos.y][pos.x] = ["Bt", 1+vel.y, vel.x]
+                    land_print[pos.y][pos.x+1] = ["Bt", 1+vel.y, vel.x]
+
+            for bullet_ent, bullet in world.get_component(Bullet):
+                # print("BULLET: " + str(bullet.x) + ", " + str(bullet.y))
+                if bullet.y >= 0 and bullet.y <= 29 and bullet.x >= 0 and bullet.x <= 29:
+                    land_print[bullet.y][bullet.x] = ["BP", bullet.y_vel, bullet.x_vel]
+
+            for bullet_ent, bullet in world.get_component(EnemyBullet):
+                # print("BULLET: " + str(bullet.x) + ", " + str(bullet.y))
+                if bullet.y >= 0 and bullet.y <= 29 and bullet.x >= 0 and bullet.x <= 29:
+                    land_print[bullet.y][bullet.x] = ["BE", bullet.y_vel, bullet.x_vel]
+
+            for ent, (pos, render, br) in world.get_components(Position, Renderable, Bridge):
+                # print("BRIDGE: " + str(pos.x) + ", " + str(pos.y))
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    for i in range(30):
+                        land_print[pos.y][i] = ["Br", 1, 0]
+                        if pos.y < 29:
+                            land_print[pos.y+1][i] = ["Br", 1, 0]
+
+            for ent, (p, pos) in world.get_components(Player, Position):
+                land_print[pos.y][pos.x] = "P"
+                land_print.append([["P", pos.y, pos.x], p.lives, p.fuel])
+
+            print(land_print)
+            message = str(land_print)
+            frame = 0
+        count += 1
+        if count == 30:
+            count = 0
+        if frame == 0:
+            # print(moves)
+            frame += 1
+            moves += 1
+            conn.send(str.encode(message))
+            while ai_move is None:
+                ai_move = str(conn.recv(20480), "utf-8")
+                ai_moves = []
+                if ai_move != '':
+                    ai_moves = eval(ai_move)
+                for move in ai_moves:
+                    print(move)
+                    if move == "RIGHT":
+                        if world.component_for_entity(player, Position).x + 1 <= (COLUMNS - 1):
+                                    world.component_for_entity(player, Velocity).x = PLAYER_SPEED
+                    if move == "DOWN":
+                        if world.component_for_entity(player, Position).y + 1 < (ROWS - 1):
+                            world.component_for_entity(player, Velocity).y = PLAYER_SPEED
+                    if move == "LEFT":
+                        if world.component_for_entity(player, Position).x - 1 >= 0:
+                            world.component_for_entity(player, Velocity).x = -PLAYER_SPEED
+                    if move == "UP":
+                        if world.component_for_entity(player, Position).y - 1 >= 0:
+                            world.component_for_entity(player, Velocity).y = -PLAYER_SPEED
+                    if move == "SPACE":
+                        player_pos = world.component_for_entity(player, Position)
+                        bullet_system.player_shoot(
+                            player_pos.x,
+                            player_pos.y - 1,
+                            0,
+                            -1
+                        )
+        if MODE == 1:
+            conn.send(str.encode("END"))
+        # Pauses the thread if the frame was quick to process, effectively limiting the framerate.
+        clock.tick(MAX_FPS)
+
+
+
 
 # If we're no longer running, quit() pygame to free its resources.
-pygame.quit()
+# pygame.quit()
