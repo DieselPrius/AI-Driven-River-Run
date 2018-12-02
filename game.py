@@ -1394,6 +1394,10 @@ while run:
                     land_print[pos.y][pos.x] = ["Bt", 1+vel.y, vel.x]
                     land_print[pos.y][pos.x+1] = ["Bt", 1+vel.y, vel.x]
 
+            for ent, (shield, pos) in world.get_components(ShieldPickup, Position):
+                if pos.y >= 0 and pos.y <= 29 and pos.x >= 0 and pos.x <= 29:
+                    land_print[pos.y][pos.x] = ["S", 1, 0]
+
             for bullet_ent, bullet in world.get_component(Bullet):
                 # print("BULLET: " + str(bullet.x) + ", " + str(bullet.y))
                 if bullet.y >= 0 and bullet.y <= 29 and bullet.x >= 0 and bullet.x <= 29:
@@ -1414,9 +1418,10 @@ while run:
 
             for ent, (p, pos) in world.get_components(Player, Position):
                 land_print[pos.y][pos.x] = "P"
-                land_print.append([["P", pos.y, pos.x], p.lives, p.fuel])
+                land_print.append([["P", pos.y, pos.x], p.lives, p.fuel, p.shieldsAvailable])
 
             print(land_print)
+            print(land_print[15])
             message = str(land_print)
             frame = 0
         count += 1
@@ -1454,6 +1459,8 @@ while run:
                             0,
                             -1
                         )
+                    if move == "A":
+                        world.component_for_entity(player, Player).activateShield()
         if MODE == 1:
             conn.send(str.encode("END"))
         # Pauses the thread if the frame was quick to process, effectively limiting the framerate.
