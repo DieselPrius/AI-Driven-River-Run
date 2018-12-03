@@ -903,7 +903,7 @@ class SpawnSystem(esper.Processor):
                 FuelStrip(),
                 Position(xpos, (-ROWS + ypos)),
                 Velocity(0, 0),
-                Renderable(pygame.image.load("./images/Fuel.png")),
+                Renderable(pygame.image.load("./images/Fuel2.png")),
                 Collider(FUEL_WIDTH, FUEL_HEIGHT)
             )
 
