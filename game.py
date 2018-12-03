@@ -61,6 +61,18 @@ BOMB_WIDTH = 1
 BOMB_HEIGHT = 1
 GOD_MODE = False
 
+# Sound Source Files
+# Sound Effects and Music were made for River-Run-AI and were composed by Kyle Kentner
+BULLET_SOUND = pygame.mixer.Sound("./sound/BULLET_SOUND.wav")
+EXPLOSION_SOUND = pygame.mixer.Sound("./sound/EXPLOSION_SOUND.wav")
+EXPLOSION_SOUND.set_volume(0.5)
+FUELSTRIP_SOUND = pygame.mixer.Sound("./sound/FUELSTRIP_SOUND.wav")
+FUELSTRIP_SOUND.set_volume(0.07)
+PLAYERDEATH_SOUND = pygame.mixer.Sound("./sound/PLAYERDEATH_SOUND.wav")
+SHIELD_GET_SOUND = pygame.mixer.Sound("./sound/SHIELD_GET_SOUND.wav")
+TITLE_MUSIC_SOUND = pygame.mixer.Sound("./sound/TITLE_MUSIC_SOUND.wav")
+TITLE_MUSIC_SOUND.set_volume(0.25)
+
 BLACK = (0, 0, 0)
 GREY = (200, 200, 200)
 WHITE = (255, 255, 255)
@@ -298,6 +310,7 @@ class Player:
                 self.__init__()
                 MODE = 1
                 print("GAME OVER")  # load title screen etc
+            pygame.mixer.Sound.play(PLAYERDEATH_SOUND) # Play the Game Over jingle
             world.get_processor(TerrainSystem).clearTerrain()  # clear terrain
             for ent, _ in world.get_component(Position):  # clear all enemy entities
                 if (ent != player):  # dont delete player
@@ -494,11 +507,13 @@ class ColliderSystem(esper.Processor):
         if (self.checkPlayerFuelStripCollisions()):
             # print("player refueling")
             self.world.component_for_entity(player, Player).refuel()
+            pygame.mixer.Sound.play(FUELSTRIP_SOUND)
 
         #check for player-shield pickup collisions
         if(self.checkPlayerShieldPickupCollisions()):
             print("SHIELD ACTIVATED!!!")
             self.world.component_for_entity(player, Player).shieldsAvailable += 1 #activateShield()
+            pygame.mixer.Sound.play(SHIELD_GET_SOUND)
 
     def checkPlayerShieldPickupCollisions(self):
         collisionDetected = False
@@ -508,6 +523,7 @@ class ColliderSystem(esper.Processor):
             if (self.checkCollision(player_pos, player_collider, pos, col)):
                 collisionDetected = True
                 self.world.delete_entity(ent)
+                
                 break
         return collisionDetected
 
@@ -713,6 +729,7 @@ class BulletSystem(esper.Processor):
                     self.world.delete_entity(enemy_ent)
                     self.world.delete_entity(bullet_ent)
                     itr = self.world.get_component(Player)
+                    pygame.mixer.Sound.play(EXPLOSION_SOUND)
                     itr[0][1].score += 10
 
             # check for bullet-fuel strip collisions
@@ -720,6 +737,7 @@ class BulletSystem(esper.Processor):
                 if ((bullet.x == pos.x and bullet.y == pos.y) or (bullet.x == pos.x and bullet.y == (pos.y - 1))):
                     self.world.delete_entity(fuel_ent)
                     self.world.delete_entity(bullet_ent)
+                    pygame.mixer.Sound.play(EXPLOSION_SOUND)
 
             # check for bullet-land collsions
             if (self.world.get_processor(ColliderSystem).checkForLandCollision(Position(bullet.x, bullet.y),
@@ -737,8 +755,10 @@ class BulletSystem(esper.Processor):
         self.world.component_for_entity(player, Player).fuel -= SHOOT_DEFUEL_PENALTY
         world.create_entity(
             Bullet(x, y, x_vel, y_vel),
-            Renderable(pygame.image.load("./images/bullet.png"))
+            Renderable(pygame.image.load("./images/bullet.png"))  
         )
+        BULLET_SOUND.set_volume(.75)
+        pygame.mixer.Sound.play(BULLET_SOUND)
 
     def enemy_shoot(self, x, y, x_vel, y_vel):
         #print("enemy_shoot()")
@@ -746,6 +766,8 @@ class BulletSystem(esper.Processor):
             EnemyBullet(x, y, x_vel, y_vel),
             Renderable(pygame.image.load("./images/enemy_bullet.png"))
         )
+        #BULLET_SOUND.set_volume(0.4)
+        #pygame.mixer.Sound.play(BULLET_SOUND)
 
 
 class Enemy:
@@ -1357,6 +1379,7 @@ frame = 0
 moves = 0
 # Main Game Loop
 # NEED TO FIX SOME OF THE ENEMY STUFF
+pygame.mixer.Sound.play(TITLE_MUSIC_SOUND)
 while run:
 
     while run and MODE == 1:
@@ -1380,6 +1403,7 @@ while run:
         pygame.time.wait(40)
 
     while run and MODE == 2:
+        pygame.mixer.Sound.stop(TITLE_MUSIC_SOUND)
         p = world.component_for_entity(player, Player)
         if p.lives == 0:
             MODE = 1
@@ -1421,6 +1445,7 @@ while run:
         clock.tick(MAX_FPS)
 
     while run and MODE == 3:
+        pygame.mixer.Sound.stop(TITLE_MUSIC_SOUND)
         p = world.component_for_entity(player, Player)
         if p.lives == 0:
             MODE = 1
