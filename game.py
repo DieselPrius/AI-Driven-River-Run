@@ -62,7 +62,7 @@ BULLET_SOUND = pygame.mixer.Sound("./sound/BULLET_SOUND.wav")
 EXPLOSION_SOUND = pygame.mixer.Sound("./sound/EXPLOSION_SOUND.wav")
 EXPLOSION_SOUND.set_volume(0.5)
 FUELSTRIP_SOUND = pygame.mixer.Sound("./sound/FUELSTRIP_SOUND.wav")
-FUELSTRIP_SOUND.set_volume(0.05)
+FUELSTRIP_SOUND.set_volume(0.07)
 PLAYERDEATH_SOUND = pygame.mixer.Sound("./sound/PLAYERDEATH_SOUND.wav")
 
 # Number of tiles to move a bullet before despawning it
